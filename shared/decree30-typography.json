@@ -1,0 +1,114 @@
+{
+  "$comment": "Canonical Decree 30/2020/NĐ-CP typography — single source of truth (CONVERSION_SERVICE_PLAN.md §8). Extracted from backend/src/services/template_typography_rules.ts (role rules) and backend/src/services/docx_service.ts (page geometry). Python rule engine loads this at runtime; the TS side must agree (scripts/check_typography_sync.py). Do NOT let an LLM decide any value in this file.",
+  "version": 1,
+  "page": {
+    "size": "A4",
+    "width_mm": 210,
+    "height_mm": 297,
+    "margins_mm": { "top": 25, "bottom": 25, "left": 30, "right": 20 }
+  },
+  "font": {
+    "family": "Times New Roman",
+    "color": "000000",
+    "default_body_size_pt": 14,
+    "body_size_range_pt": [13, 14]
+  },
+  "spacing": {
+    "line_spacing": 1.15,
+    "line_spacing_range": [1.0, 1.5],
+    "paragraph_before_pt": 0,
+    "paragraph_after_pt": 6
+  },
+  "indent": {
+    "first_line_pt": 36,
+    "first_line_range_cm": [1.0, 1.27],
+    "list_hanging_pt": 18
+  },
+  "underlines": {
+    "motto": { "style": "single", "width": "text_width", "width_ratio": 1.0 }
+  },
+  "zones": {
+    "header_zone_ratio": 0.25,
+    "signature_zone_ratio": 0.25
+  },
+  "roles": {
+    "agency_name": { "min": 12, "max": 13, "bold": true, "italic": false, "case": "upper" },
+    "document_number": { "min": 13, "max": 13, "bold": false, "italic": false },
+    "place": { "min": 13, "max": 14, "italic": true },
+    "date_vn": { "min": 13, "max": 14, "italic": true },
+    "recipient": { "min": 13, "max": 14, "italic": false },
+    "legal_basis": { "min": 13, "max": 14, "italic": true },
+    "content_items": { "min": 13, "max": 14, "italic": false },
+    "distribution_list": { "min": 11, "max": 12 },
+    "signatory_name": { "min": 13, "max": 14, "bold": true },
+    "signatory_title": { "min": 13, "max": 14, "bold": true },
+    "security_level": { "min": 13, "max": 14, "bold": true },
+    "urgency_level": { "min": 13, "max": 14, "bold": true },
+    "circulation_instructions": { "min": 13, "max": 14, "bold": true },
+    "agency_address": { "min": 11, "max": 12 },
+    "agency_email": { "min": 11, "max": 12 },
+    "agency_website": { "min": 11, "max": 12 },
+    "agency_phone": { "min": 11, "max": 12 },
+    "subject": { "min": 13, "max": 14, "bold": true, "italic": false },
+    "subject_cong_van": { "min": 12, "max": 13, "bold": false, "italic": false }
+  },
+  "blocks": {
+    "admin_header": {
+      "columns": 2,
+      "left": {
+        "superior_agency": { "role": "agency_name", "size_pt": 12, "bold": false, "case": "upper", "align": "center" },
+        "issuing_agency": { "role": "agency_name", "size_pt": 13, "bold": true, "case": "upper", "align": "center" },
+        "document_number": { "role": "document_number", "size_pt": 13, "bold": false, "align": "center" }
+      },
+      "right": {
+        "country_name": { "size_pt": 12.5, "size_range_pt": [12, 13], "bold": true, "case": "upper", "align": "center" },
+        "motto": { "size_pt": 13.5, "size_range_pt": [13, 14], "bold": true, "align": "center", "underline": "motto" },
+        "location_and_date": { "role": "date_vn", "size_pt": 13.5, "italic": true, "align": "center" }
+      }
+    },
+    "heading": {
+      "level_1": { "size_pt": 14, "bold": true, "case": "upper", "align": "center", "note": "Document type name: QUYẾT ĐỊNH, CÔNG VĂN, THÔNG BÁO" },
+      "level_2": { "size_pt": 13.5, "size_range_pt": [13, 14], "bold": true, "case": "upper", "align": "left", "note": "Điều article heading" },
+      "level_3": { "size_pt": 13.5, "size_range_pt": [13, 14], "bold": true, "case": "upper", "align": "center", "note": "Chương / Mục / Phần heading" }
+    },
+    "paragraph": {
+      "size_range_pt": [13, 14],
+      "size_pt": 13.5,
+      "align": "justify",
+      "first_line_indent": "indent.first_line_pt",
+      "line_spacing": "spacing.line_spacing"
+    },
+    "list": {
+      "size_range_pt": [13, 14],
+      "size_pt": 13.5,
+      "marker_style_preserved": true,
+      "hanging_indent_pt": "indent.list_hanging_pt"
+    },
+    "table": {
+      "size_range_pt": [12, 14],
+      "size_pt": 13,
+      "header_bold": true,
+      "borders": "single"
+    },
+    "signature": {
+      "columns": 2,
+      "left": {
+        "label": { "text": "Nơi nhận:", "size_pt": 13.5, "bold": true, "italic": true },
+        "receipt_item": { "role": "distribution_list", "size_pt": 11.5, "bold": false }
+      },
+      "right": {
+        "authority": { "role": "signatory_title", "size_pt": 13.5, "bold": true, "case": "upper", "align": "center" },
+        "title": { "role": "signatory_title", "size_pt": 13.5, "bold": true, "case": "upper", "align": "center" },
+        "name": { "role": "signatory_name", "size_pt": 13.5, "bold": true, "case": "upper", "align": "center" },
+        "signature_space_lines": 3
+      }
+    },
+    "section_break": {
+      "label": { "size_pt": 14, "bold": true, "case": "upper", "align": "center" }
+    },
+    "illegible": {
+      "marker_template": "[Vùng không đọc được — trang {page}]",
+      "italic": true
+    }
+  }
+}

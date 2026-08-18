@@ -1,0 +1,90 @@
+[
+  {
+    "type": "admin_header",
+    "confidence": 1.0, "page": 1,
+    "left": {
+      "superior_agency": "BỘ TÀI CHÍNH",
+      "issuing_agency": "TỔNG CỤC THUẾ",
+      "document_number": "Số: 789/TB-TCT"
+    },
+    "right": {
+      "country_name": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
+      "motto": "Độc lập - Tự do - Hạnh phúc",
+      "location_and_date": "Hà Nội, ngày 15 tháng 8 năm 2025"
+    }
+  },
+  { "type": "heading", "level": 1, "text": "THÔNG BÁO", "align": "center", "confidence": 1.0, "page": 1 },
+  {
+    "type": "paragraph", "align": "center",
+    "text": "Về việc nghỉ lễ Quốc khánh năm 2025",
+    "confidence": 0.95, "page": 1
+  },
+  {
+    "type": "paragraph", "align": "justify",
+    "runs": [
+      { "text": "Căn cứ ", "italic": true },
+      { "text": "Bộ luật Lao động ", "italic": true },
+      { "text": "năm 2019 và ý kiến chỉ đạo của Bộ Tài chính, Tổng cục Thuế thông báo lịch nghỉ lễ Quốc khánh năm 2025 như sau:" }
+    ],
+    "confidence": 0.95, "page": 1
+  },
+  { "type": "heading", "level": 2, "text": "1. Thời gian nghỉ", "confidence": 1.0, "page": 1 },
+  {
+    "type": "paragraph", "align": "justify",
+    "text": "Công chức, viên chức và người lao động được nghỉ lễ Quốc khánh từ ngày 01 tháng 9 năm 2025 đến hết ngày 02 tháng 9 năm 2025.",
+    "confidence": 1.0, "page": 1
+  },
+  { "type": "heading", "level": 2, "text": "2. Tổ chức thực hiện", "confidence": 1.0, "page": 1 },
+  {
+    "type": "list", "ordered": true, "marker": "a)",
+    "items": [
+      { "text": "Các đơn vị bố trí người trực để giải quyết công việc liên tục;" },
+      { "text": "Niêm yết công khai lịch nghỉ tại trụ sở cơ quan." }
+    ],
+    "confidence": 1.0, "page": 1
+  },
+  {
+    "type": "signature",
+    "confidence": 1.0, "page": 1,
+    "left": { "receipt_list": ["Các đơn vị thuộc Tổng cục;", "Lưu: VT, VP."] },
+    "right": { "authority": "TỔNG CỤC TRƯỞNG", "title": "", "name": "Hoàng Văn E" }
+  },
+  {
+    "type": "image", "kind": "seal",
+    "src": "eval/fixtures/media/seal_thong_bao.png",
+    "bbox": [610, 770, 845, 975],
+    "placement": "floating",
+    "anchor_block": "signature",
+    "confidence": 0.85, "page": 1
+  },
+  {
+    "type": "section_break", "orientation": "landscape", "page_size": "A4",
+    "label": "PHỤ LỤC III", "confidence": 1.0, "page": 2
+  },
+  {
+    "type": "table",
+    "headers": [
+      [
+        { "text": "STT", "rowspan": 2, "align": "center", "bold": true },
+        { "text": "Đơn vị", "colspan": 2, "align": "center", "bold": true }
+      ],
+      [
+        { "text": "Người trực", "align": "center", "bold": true },
+        { "text": "Số điện thoại", "align": "center", "bold": true }
+      ]
+    ],
+    "rows": [
+      [
+        { "text": "1", "align": "center" },
+        { "text": "Văn phòng Tổng cục", "align": "left" },
+        { "text": "024.1234567", "align": "center" }
+      ],
+      [
+        { "text": "2", "align": "center" },
+        { "text": "Vụ Tuyên truyền", "align": "left" },
+        { "text": "024.7654321", "align": "center" }
+      ]
+    ],
+    "confidence": 0.9, "page": 2
+  }
+]

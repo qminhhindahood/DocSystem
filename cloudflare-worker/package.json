@@ -1,0 +1,11 @@
+{
+  "name": "docai-custom-domain-worker",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.122.0"
+  }
+}

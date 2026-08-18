@@ -1,0 +1,186 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: docai-production
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: '${{ vars.GCP_PROJECT_ID }}'
+  REGION: asia-southeast1
+  REGISTRY: 'asia-southeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/docai'
+
+jobs:
+  build-images:
+    if: vars.PRODUCTION_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: backend
+            context: backend
+          - service: frontend
+            context: frontend
+          - service: docling
+            context: docling-service
+          - service: embeddings
+            context: embeddings-service
+          - service: renderer
+            context: document-renderer
+    steps:
+      - uses: actions/checkout@v7
+      - uses: google-github-actions/auth@v3
+        with:
+          project_id: '${{ env.PROJECT_ID }}'
+          workload_identity_provider: '${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}'
+      - uses: google-github-actions/setup-gcloud@v3
+      - run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: '${{ matrix.context }}'
+          push: true
+          tags: '${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }}'
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        env:
+          # Large ML images exhaust hosted-runner disk when exported from Docker.
+          # Scan the immutable Artifact Registry copy without loading a duplicate.
+          TRIVY_IMAGE_SRC: remote
+        with:
+          image-ref: '${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }}'
+          format: table
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: '${{ matrix.service == ''embeddings'' && ''true'' || ''false'' }}'
+          scanners: '${{ (matrix.service == ''embeddings'' || matrix.service == ''docling'') && ''vuln'' || ''vuln,secret'' }}'
+          exit-code: '1'
+      - name: Record immutable digest
+        shell: bash
+        run: |
+          digest="$(docker buildx imagetools inspect "${REGISTRY}/${{ matrix.service }}:${GITHUB_SHA}" --format '{{json .Manifest}}' | jq -r .digest)"
+          test -n "$digest" && test "$digest" != null
+          echo "- ${{ matrix.service }} digest: \`$digest\`" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    if: vars.PRODUCTION_ENABLED == 'true'
+    needs: build-images
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: google-github-actions/auth@v3
+        with:
+          project_id: '${{ env.PROJECT_ID }}'
+          workload_identity_provider: '${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}'
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Verify human-applied infrastructure release
+        shell: bash
+        run: |
+          expected_image="${REGISTRY}/backend:${GITHUB_SHA}"
+          for job in docai-migrate docai-reset-password; do
+            actual_image="$(gcloud run jobs describe "$job" --region "$REGION" --format=json | jq -r '.spec.template.spec.template.spec.containers[0].image // .template.template.containers[0].image // empty')"
+            test "$actual_image" = "$expected_image" || {
+              echo "Human Terraform apply is required: $job is not pinned to ${GITHUB_SHA}." >&2
+              exit 1
+            }
+          done
+      - name: Execute migration gate
+        run: |
+          gcloud run jobs execute docai-migrate --region "$REGION" --wait --quiet
+          gcloud run jobs execute docai-bootstrap-smoke-user --region "$REGION" --wait --quiet
+          echo '- migration: passed' >> "$GITHUB_STEP_SUMMARY"
+      - name: Deploy private processing services
+        run: |
+          gcloud run deploy docai-docling --image "${REGISTRY}/docling:${GITHUB_SHA}" --region "$REGION" --quiet
+          gcloud run deploy docai-embeddings --image "${REGISTRY}/embeddings:${GITHUB_SHA}" --region "$REGION" --quiet
+          gcloud run deploy docai-renderer --image "${REGISTRY}/renderer:${GITHUB_SHA}" --region "$REGION" --quiet
+          {
+            echo "DOCLING_URL=$(gcloud run services describe docai-docling --region "$REGION" --format='value(status.url)')"
+            echo "EMBEDDINGS_URL=$(gcloud run services describe docai-embeddings --region "$REGION" --format='value(status.url)')"
+            echo "RENDERER_URL=$(gcloud run services describe docai-renderer --region "$REGION" --format='value(status.url)')"
+          } >> "$GITHUB_ENV"
+      - name: Deploy no-traffic candidate revisions
+        shell: bash
+        run: |
+          short="${GITHUB_SHA:0:8}"
+          tag="candidate-${short}"
+          gcloud run deploy docai-backend --image "${REGISTRY}/backend:${GITHUB_SHA}" --region "$REGION" --no-traffic --tag "$tag" \
+            --update-env-vars "^|^DISABLE_PUBLIC_REGISTER=false|TURNSTILE_EXPECTED_HOSTNAMES=docai.dpdns.org,docai-frontend-in4iwfyf6q-as.a.run.app|CORS_ORIGIN=https://docai.dpdns.org,https://docai-frontend-in4iwfyf6q-as.a.run.app" \
+            --quiet
+          gcloud run services describe docai-backend --region "$REGION" --format=json | jq -e '
+            .spec.template.spec.containers[0].env[]
+            | select(.name == "TURNSTILE_SECRET_KEY")
+            | .valueFrom.secretKeyRef.name == "docai-turnstile-secret-key"
+              and .valueFrom.secretKeyRef.key == "2"
+          ' >/dev/null
+          backend_url="$(gcloud run services describe docai-backend --region "$REGION" --format=json | jq -r --arg tag "$tag" '.status.traffic[] | select(.tag == $tag) | .url')"
+          backend_audience="$(gcloud run services describe docai-backend --region "$REGION" --format='value(status.url)')"
+          test -n "$backend_url" && test "$backend_url" != null
+          test -n "$backend_audience"
+          gcloud run deploy docai-frontend --image "${REGISTRY}/frontend:${GITHUB_SHA}" --region "$REGION" --timeout=900 --no-traffic --tag "$tag" \
+            --update-env-vars "BACKEND_API_URL=$backend_url,BACKEND_ID_TOKEN_AUDIENCE=$backend_audience,TURNSTILE_SITE_KEY=0x4AAAAAAEORwCGueycu4PbE" --quiet
+          frontend_url="$(gcloud run services describe docai-frontend --region "$REGION" --format=json | jq -r --arg tag "$tag" '.status.traffic[] | select(.tag == $tag) | .url')"
+          test -n "$frontend_url" && test "$frontend_url" != null
+          {
+            echo "CANDIDATE_TAG=$tag"
+            echo "BACKEND_AUDIENCE=$backend_audience"
+            echo "BACKEND_CANDIDATE_URL=$backend_url"
+            echo "FRONTEND_CANDIDATE_URL=$frontend_url"
+          } >> "$GITHUB_ENV"
+          {
+            echo "- backend revision candidate: $backend_url"
+            echo "- frontend revision candidate: $frontend_url"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Authenticate least-privilege smoke identity
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: '${{ env.PROJECT_ID }}'
+          workload_identity_provider: '${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{ vars.GCP_SMOKE_SERVICE_ACCOUNT }}'
+      - name: Authenticated production smoke
+        shell: pwsh
+        env:
+          SMOKE_USERNAME_SECRET: docai-smoke-username
+          SMOKE_PASSWORD_SECRET: docai-smoke-password
+          SMOKE_SERVICE_ACCOUNT: '${{ vars.GCP_SMOKE_SERVICE_ACCOUNT }}'
+        run: >-
+          ./ops/gcp/smoke-production.ps1
+          -ProjectId $env:PROJECT_ID
+          -Region $env:REGION
+          -FrontendUrl $env:FRONTEND_CANDIDATE_URL
+          -BackendUrl $env:BACKEND_CANDIDATE_URL
+          -FixturePath docs/templates-gemini/6_Administrative_Forms/Giay_moi_hop_27_GM-DU.pdf
+          -TemplateFixturePath docs/generated-templates/quyet-dinh.docx
+      - name: Re-authenticate deployer for promotion
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: '${{ env.PROJECT_ID }}'
+          workload_identity_provider: '${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}'
+      - name: Promote verified traffic
+        shell: pwsh
+        run: ./ops/gcp/promote-traffic.ps1 -ProjectId $env:PROJECT_ID -Region $env:REGION -CandidateTag $env:CANDIDATE_TAG
+      - name: Release evidence
+        shell: bash
+        run: |
+          {
+            echo '## Production release evidence'
+            echo "- commit: \`${GITHUB_SHA}\`"
+            echo "- migration: docai-migrate passed"
+            for service in docai-docling docai-embeddings docai-renderer docai-backend docai-frontend; do
+              revision="$(gcloud run services describe "$service" --region "$REGION" --format='value(status.latestReadyRevisionName)')"
+              image="$(gcloud run revisions describe "$revision" --region "$REGION" --format='value(spec.containers[0].image)')"
+              echo "- $service revision: \`$revision\`; image digest/tag: \`$image\`"
+            done
+            echo '- authenticated smoke: passed; traffic promoted: 100%'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,10 @@
+fastapi==0.141.1
+uvicorn[standard]==0.35.0
+python-multipart==0.0.32
+pydantic==2.11.7
+# Jina v5 (jina-embeddings-v5-text-small) requires sentence-transformers 5.x,
+# transformers >= 4.57, torch >= 2.8, and peft for its LoRA task adapters.
+sentence-transformers==5.7.0
+transformers==5.15.0
+torch==2.8.0
+peft==0.20.0

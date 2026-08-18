@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docai.local/schemas/neon-cu-usage-export.schema.json",
+  "title": "NeonCuUsageExportV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "projectId", "observedAt", "cuHours"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "cuHours": { "type": "number", "minimum": 0 }
+  }
+}

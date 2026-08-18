@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "docai-custom-domain",
+  "main": "src/index.mjs",
+  "compatibility_date": "2026-08-13",
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "docai.dpdns.org",
+      "custom_domain": true
+    }
+  ]
+}

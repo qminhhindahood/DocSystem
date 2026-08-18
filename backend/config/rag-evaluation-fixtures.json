@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "description": "Source-bound retrieval fixtures shipped with the backend. Cases are eligible only when their source filename is present in the forced-reindex manifest and active corpus.",
+  "cases": [
+    {
+      "id": "nd30-reference",
+      "category": "exact-reference",
+      "docType": "nghi-dinh-reference",
+      "query": "Nghị định 30/2020/NĐ-CP về công tác văn thư",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["4-nghi-dinh-30-2020-ve-cong-tac-van-thu-1_103202622.pdf"]
+    },
+    {
+      "id": "nd30-document-components",
+      "category": "semantic",
+      "docType": "nghi-dinh-reference",
+      "query": "các thành phần thể thức chính của văn bản hành chính",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["4-nghi-dinh-30-2020-ve-cong-tac-van-thu-1_103202622.pdf"]
+    },
+    {
+      "id": "nd30-national-header",
+      "category": "semantic",
+      "docType": "nghi-dinh-reference",
+      "query": "quốc hiệu và tiêu ngữ trên văn bản hành chính",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["4-nghi-dinh-30-2020-ve-cong-tac-van-thu-1_103202622.pdf"]
+    },
+    {
+      "id": "nd30-signature-seal",
+      "category": "semantic",
+      "docType": "nghi-dinh-reference",
+      "query": "chức vụ họ tên chữ ký người có thẩm quyền và dấu cơ quan",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["4-nghi-dinh-30-2020-ve-cong-tac-van-thu-1_103202622.pdf"]
+    },
+    {
+      "id": "nd30-security-urgency",
+      "category": "semantic",
+      "docType": "nghi-dinh-reference",
+      "query": "dấu chỉ độ mật mức độ khẩn và phạm vi lưu hành",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["4-nghi-dinh-30-2020-ve-cong-tac-van-thu-1_103202622.pdf"]
+    },
+    {
+      "id": "nd30-copy-drafter",
+      "category": "semantic",
+      "docType": "nghi-dinh-reference",
+      "query": "ký hiệu người soạn thảo và số lượng bản phát hành",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["4-nghi-dinh-30-2020-ve-cong-tac-van-thu-1_103202622.pdf"]
+    },
+    {
+      "id": "cv-vocational-consultation",
+      "category": "document-specific",
+      "docType": "cong-van",
+      "query": "công văn lấy ý kiến các cơ sở giáo dục nghề nghiệp",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["3884cong-van-lay-y-kien-cac-co-so-gdnn_411202510.pdf"]
+    },
+    {
+      "id": "cv-vocational-recipients",
+      "category": "entity",
+      "docType": "cong-van",
+      "query": "các cơ sở giáo dục nghề nghiệp được đề nghị góp ý",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["3884cong-van-lay-y-kien-cac-co-so-gdnn_411202510.pdf"]
+    },
+    {
+      "id": "cv-technical-norms-120",
+      "category": "document-specific",
+      "docType": "cong-van",
+      "query": "truyền thông danh mục định mức kinh tế kỹ thuật 120 nghề",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["cv-1808truyen-thong-dm-ktkt-120-nghefinal_63202615.pdf"]
+    },
+    {
+      "id": "type-nghi-quyet",
+      "category": "document-type",
+      "docType": "nghi-quyet",
+      "query": "nghị quyết của Hội đồng nhân dân",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["Nghi_quyet_02_NQ-HDND.pdf"]
+    },
+    {
+      "id": "type-quyet-dinh",
+      "category": "document-type",
+      "docType": "quyet-dinh",
+      "query": "quyết định ban hành tài liệu kèm theo",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["Quyet_dinh_582_QD-BNV.pdf"]
+    },
+    {
+      "id": "type-chi-thi",
+      "category": "document-type",
+      "docType": "chi-thi",
+      "query": "chỉ thị tổ chức thực hiện nhiệm vụ",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["Chi_thi_06_CT-TU.pdf"]
+    },
+    {
+      "id": "type-thong-tu",
+      "category": "document-type",
+      "docType": "thong-tu",
+      "query": "thông tư của Bộ Giáo dục và Đào tạo",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["Thong_tu_46_2026_TT-BGDDT.pdf", "Thong_tu_59_2026_TT-BGDDT.pdf"]
+    },
+    {
+      "id": "type-ke-hoach",
+      "category": "document-type",
+      "docType": "ke-hoach",
+      "query": "kế hoạch mục đích yêu cầu tiến độ kinh phí và phân công thực hiện",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["Ke_hoach_1807_KH-SGDDT.pdf", "Ke_hoach_393_KH-UBND.pdf"]
+    },
+    {
+      "id": "type-bao-cao",
+      "category": "document-type",
+      "docType": "bao-cao",
+      "query": "báo cáo kết quả đánh giá hạn chế và phương hướng",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["Bao_cao_176_BC-HDHT.pdf", "Bao_cao_ket_qua_ND277.pdf", "Bao_cao_so_lieu_NQ30.pdf"]
+    },
+    {
+      "id": "type-thong-bao",
+      "category": "document-type",
+      "docType": "thong-bao",
+      "query": "thông báo nội dung yêu cầu và nơi nhận",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["Thong_bao_277_TB-HDPH.pdf"]
+    },
+    {
+      "id": "type-huong-dan",
+      "category": "document-type",
+      "docType": "huong-dan",
+      "query": "hướng dẫn tổ chức thực hiện tiêu chuẩn giáo dục và đào tạo",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["Huong_dan_7213_HD-SGDDT.pdf"]
+    },
+    {
+      "id": "type-cong-van",
+      "category": "document-specific",
+      "docType": "cong-van",
+      "query": "phiếu khảo sát Đề án nhà ở",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["Cong_van_274_CDGD-CSPL.pdf"]
+    },
+    {
+      "id": "type-ban-thoa-thuan",
+      "category": "document-type",
+      "docType": "ban-thoa-thuan",
+      "query": "thỏa thuận hợp tác giữa hai bên nguyên tắc trách nhiệm và hiệu lực",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["Thoa_thuan_hop_tac_BDVN.pdf"]
+    },
+    {
+      "id": "type-giay-moi",
+      "category": "document-type",
+      "docType": "giay-moi",
+      "query": "giấy mời dự hội nghị thời gian địa điểm thành phần",
+      "expectedKeywords": [],
+      "expectedSourceFiles": ["Giay_moi_Thang_cong_nhan.pdf", "Giay_moi_hop_27_GM-DU.pdf"]
+    }
+  ]
+}

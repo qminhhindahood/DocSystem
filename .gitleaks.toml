@@ -1,0 +1,15 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "hashicorp-tf-password"
+
+  [[rules.allowlists]]
+  description = "Terraform password-reset mode and identity are not credentials"
+  condition = "AND"
+  regexTarget = "line"
+  paths = ['''^infra/terraform/(cloud_run|iam)\.tf$''']
+  regexes = [
+    '''^\s*PASSWORD_RESET_MODE\s*=\s*"disabled"\s*$''',
+    '''^\s*password_reset\s*=\s*"docai-password-reset"\s*$''',
+  ]

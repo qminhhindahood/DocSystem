@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "preflightProjection": {
+    "secretManagerActiveVersions": 5
+  },
+  "metrics": {
+    "artifactRegistryBytes": { "policy": "hard_limit", "unit": "bytes", "internalCeiling": 419430400 },
+    "secretManagerActiveVersions": { "policy": "hard_limit", "unit": "versions", "internalCeiling": 5 },
+    "secretManagerAccessOperations": { "policy": "progressive", "unit": "operations/month", "internalCeiling": 7000 },
+    "cloudRunCpuSecondsPerMonth": { "policy": "progressive", "unit": "vCPU-seconds/month", "internalCeiling": 126000 },
+    "cloudRunRamGibSecondsPerMonth": { "policy": "progressive", "unit": "GiB-seconds/month", "internalCeiling": 252000 },
+    "cloudRunRequestsPerMonth": { "policy": "progressive", "unit": "requests/month", "internalCeiling": 1400000 },
+    "cloudRunEgressBytesPerMonth": { "policy": "progressive", "unit": "bytes/month", "internalCeiling": 734003200 },
+    "gcsBytes": { "policy": "progressive", "unit": "byte-months", "internalCeiling": 3758096384 },
+    "gcsClassAOperations": { "policy": "progressive", "unit": "operations/month", "internalCeiling": 3500 },
+    "gcsClassBOperations": { "policy": "progressive", "unit": "operations/month", "internalCeiling": 35000 },
+    "gcsNorthAmericaTransferBytes": { "policy": "progressive", "unit": "bytes/month", "internalCeiling": 75161927680 },
+    "cloudTasksOperations": { "policy": "progressive", "unit": "operations/month", "internalCeiling": 700000 },
+    "loggingBytes": { "policy": "progressive", "unit": "bytes/month", "internalCeiling": 37580963840 },
+    "neonBytes": { "policy": "progressive", "unit": "bytes", "internalCeiling": 367001600 },
+    "neonCuHours": { "policy": "progressive", "unit": "CU-hours/month", "internalCeiling": 70 },
+    "neonTransferBytes": { "policy": "progressive", "unit": "bytes/month", "internalCeiling": 3758096384 },
+    "upstashBytes": { "policy": "progressive", "unit": "bytes", "internalCeiling": 134217728 },
+    "upstashCommands": { "policy": "progressive", "unit": "commands/month", "internalCeiling": 350000 },
+    "upstashBandwidthBytes": { "policy": "progressive", "unit": "bytes/month", "internalCeiling": 7516192768 },
+    "cloudflareRequestsPerDay": { "policy": "progressive", "unit": "requests/day", "internalCeiling": 70000 },
+    "cloudflareWorkerCpuP95Ms": { "policy": "progressive", "unit": "milliseconds-p95", "internalCeiling": 7 },
+    "maxEmbeddedChunksPerUser": { "policy": "hard_limit", "unit": "chunks/user", "internalCeiling": 1000 },
+    "globalEmbeddedChunks": { "policy": "hard_limit", "unit": "chunks", "internalCeiling": 20000 },
+    "maxNonterminalGenerationJobsPerUser": { "policy": "hard_limit", "unit": "jobs/user", "internalCeiling": 10 }
+  },
+  "officialSources": [
+    { "name": "cloud-run", "url": "https://cloud.google.com/run/pricing" },
+    { "name": "artifact-registry", "url": "https://cloud.google.com/artifact-registry/pricing" },
+    { "name": "cloud-storage", "url": "https://cloud.google.com/storage/pricing" },
+    { "name": "cloud-tasks", "url": "https://cloud.google.com/tasks/pricing" },
+    { "name": "secret-manager", "url": "https://cloud.google.com/secret-manager/pricing" },
+    { "name": "cloud-logging", "url": "https://cloud.google.com/logging/pricing" },
+    { "name": "neon-pricing", "url": "https://neon.com/pricing" },
+    { "name": "neon-network-transfer", "url": "https://neon.com/docs/introduction/network-transfer" },
+    { "name": "neon-project-usage", "url": "https://neon.com/docs/manage/projects" },
+    { "name": "upstash-pricing", "url": "https://upstash.com/pricing/redis" },
+    { "name": "upstash-stats-api", "url": "https://upstash.com/docs/devops/developer-api/redis/get_database_stats" },
+    { "name": "cloudflare-worker-limits", "url": "https://developers.cloudflare.com/workers/platform/limits/" },
+    { "name": "cloudflare-worker-metrics", "url": "https://developers.cloudflare.com/analytics/graphql-api/tutorials/querying-workers-metrics/" }
+  ]
+}

@@ -1,0 +1,96 @@
+[
+  {
+    "type": "admin_header",
+    "confidence": 1.0, "page": 1,
+    "left": {
+      "superior_agency": "ỦY BAN NHÂN DÂN THÀNH PHỐ HÀ NỘI",
+      "issuing_agency": "SỞ NỘI VỤ",
+      "document_number": "Số: 456/SNV-TCCB"
+    },
+    "right": {
+      "country_name": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
+      "motto": "Độc lập - Tự do - Hạnh phúc",
+      "location_and_date": "Hà Nội, ngày 10 tháng 6 năm 2025"
+    }
+  },
+  { "type": "heading", "level": 1, "text": "CÔNG VĂN", "align": "center", "confidence": 1.0, "page": 1 },
+  {
+    "type": "paragraph", "align": "center",
+    "text": "Về việc hướng dẫn thực hiện chế độ báo cáo định kỳ",
+    "confidence": 0.95, "page": 1
+  },
+  {
+    "type": "paragraph", "align": "justify",
+    "text": "Kính gửi: Các cơ quan, đơn vị thuộc Ủy ban nhân dân Thành phố.",
+    "confidence": 1.0, "page": 1
+  },
+  {
+    "type": "paragraph", "align": "justify",
+    "runs": [
+      { "text": "Thực hiện ", "italic": true },
+      { "text": "Quyết định số 15/2025/QĐ-UBND ", "italic": true },
+      { "text": "ngày 01 tháng 6 năm 2025 của Ủy ban nhân dân Thành phố, Sở Nội vụ hướng dẫn thực hiện chế độ báo cáo định kỳ như sau:" }
+    ],
+    "confidence": 0.95, "page": 1
+  },
+  { "type": "heading", "level": 2, "text": "1. Phạm vi áp dụng", "confidence": 1.0, "page": 1 },
+  {
+    "type": "paragraph", "align": "justify",
+    "text": "Văn bản này áp dụng đối với toàn bộ các cơ quan, đơn vị thuộc Ủy ban nhân dân Thành phố trong việc thực hiện chế độ báo cáo định kỳ hàng tháng, hàng quý và hàng năm.",
+    "confidence": 1.0, "page": 1
+  },
+  { "type": "heading", "level": 2, "text": "2. Thời hạn gửi báo cáo", "confidence": 1.0, "page": 1 },
+  {
+    "type": "list", "ordered": true, "marker": "a)",
+    "items": [
+      { "text": "Báo cáo tháng: gửi trước ngày 20 của tháng báo cáo;" },
+      { "text": "Báo cáo quý: gửi trước ngày 20 của tháng cuối quý;" },
+      { "text": "Báo cáo năm: gửi trước ngày 15 tháng 12 của năm báo cáo." }
+    ],
+    "confidence": 1.0, "page": 1
+  },
+  {
+    "type": "signature",
+    "confidence": 1.0, "page": 1,
+    "left": { "receipt_list": ["Như trên;", "Lưu: VT, TCCB."] },
+    "right": { "authority": "GIÁM ĐỐC", "title": "", "name": "Phạm Thị D" }
+  },
+  {
+    "type": "image", "kind": "seal",
+    "src": "eval/fixtures/media/seal_cong_van.png",
+    "bbox": [600, 760, 840, 970],
+    "placement": "floating",
+    "anchor_block": "signature",
+    "confidence": 0.85, "page": 1
+  },
+  {
+    "type": "section_break", "orientation": "landscape", "page_size": "A4",
+    "label": "PHỤ LỤC II", "confidence": 1.0, "page": 2
+  },
+  {
+    "type": "table",
+    "headers": [
+      [
+        { "text": "STT", "rowspan": 2, "align": "center", "bold": true },
+        { "text": "Nội dung báo cáo", "colspan": 2, "align": "center", "bold": true }
+      ],
+      [
+        { "text": "Đơn vị thực hiện", "align": "center", "bold": true },
+        { "text": "Thời hạn", "align": "center", "bold": true }
+      ]
+    ],
+    "rows": [
+      [
+        { "text": "1", "align": "center" },
+        { "text": "Báo cáo kết quả công tác tháng", "align": "left" },
+        { "text": "Trước ngày 20", "align": "center" }
+      ],
+      [
+        { "text": "2", "align": "center" },
+        { "text": "Báo cáo tổng hợp quý", "align": "left" },
+        { "text": "Trước ngày 20 tháng cuối quý", "align": "center" }
+      ]
+    ],
+    "confidence": 0.9, "page": 2
+  }
+]

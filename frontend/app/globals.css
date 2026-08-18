@@ -1,0 +1,349 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Rounded Civic Workspace design system ─────────────── */
+/* Spec: docs/superpowers/specs/2026-08-08-rounded-civic-workspace-design.md */
+/* Fonts: Be Vietnam Pro (all UI), JetBrains Mono (technical values) */
+/* Light mode is the default; dark mode is a structural mirror. */
+
+:root {
+  color-scheme: light;
+
+  --font-text: var(--font-be-vietnam), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+
+  /* Foundations (light) */
+  --color-canvas: #EEF1F5;
+  --color-workspace: #FFFFFF;
+  --color-surface: #FFFFFF;
+  --color-surface-subtle: #F6F7F9;
+  --color-surface-strong: #ECEFF3;
+  --color-editor: #FFFFFF;
+
+  --color-text-primary: #172033;
+  --color-text-secondary: #5C667A;
+  /* Spec lists #768095, which measures 3.97:1 on white and fails the spec's own
+     AA requirement. Darkened to the lightest AA-passing value in the same hue. */
+  --color-text-muted: #646D80;
+
+  --color-action: #3157D5;
+  --color-action-hover: #2748B9;
+  --color-action-text: #2A4CC0;
+  --color-action-text-hover: #23429F;
+  --color-action-tint: #E7EDFB;
+  --color-link: #2A4CC0;
+  --color-on-action: #FFFFFF;
+
+  --color-hairline: #E1E5EA;
+  --color-border-strong: #C9D0DA;
+  --color-focus: #3157D5;
+  --color-focus-ring: rgba(49, 87, 213, 0.28);
+  --color-selection: rgba(49, 87, 213, 0.16);
+
+  --color-success: #0E5731;
+  --color-success-text: #0E5731;
+  --color-success-surface: #E4F4EA;
+  --color-warning: #7A4200;
+  --color-warning-text: #7A4200;
+  --color-warning-surface: #FBF0DE;
+  --color-error: #A81E19;
+  --color-error-text: #A81E19;
+  --color-error-surface: #FBE9E7;
+  --color-info: #23429F;
+  --color-info-text: #23429F;
+  --color-info-surface: #E7EDFB;
+
+  --color-diff-insert: rgba(14, 87, 49, 0.12);
+  --color-diff-remove: rgba(168, 30, 25, 0.12);
+
+  /* Shape */
+  --radius-workspace: 24px;
+  --radius-panel: 16px;
+  --radius-control: 12px;
+  --radius-compact: 10px;
+  --radius-pill: 9999px;
+
+  /* Elevation: ordinary surfaces stay flat. */
+  --shadow-workspace: 0 18px 50px rgba(22, 31, 52, 0.08);
+  --shadow-floating: 0 16px 40px rgba(22, 31, 52, 0.14);
+
+  /* Motion */
+  --duration-fast: 150ms;
+  --duration-standard: 200ms;
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* Layering */
+  --z-base: 1;
+  --z-dropdown: 10;
+  --z-sticky: 20;
+  --z-backdrop: 1000;
+  --z-modal: 1000;
+  --z-popover: 1050;
+  --z-toast: 1100;
+  --z-tooltip: 1200;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-canvas: #111318;
+  --color-workspace: #181B22;
+  --color-surface: #181B22;
+  --color-surface-subtle: #1E222B;
+  --color-surface-strong: #272C36;
+  --color-editor: #181B22;
+
+  --color-text-primary: #F5F7FB;
+  --color-text-secondary: #C4CAD6;
+  --color-text-muted: #98A1B2;
+
+  --color-action: #7C9BFF;
+  --color-action-hover: #98AFFF;
+  --color-action-text: #9CB3FF;
+  --color-action-text-hover: #BCCBFF;
+  --color-action-tint: #1E2740;
+  --color-link: #9CB3FF;
+  --color-on-action: #10151F;
+
+  --color-hairline: #303642;
+  --color-border-strong: #465063;
+  --color-focus: #9CB3FF;
+  --color-focus-ring: rgba(156, 179, 255, 0.32);
+  --color-selection: rgba(124, 155, 255, 0.24);
+
+  --color-success: #6FD79A;
+  --color-success-text: #6FD79A;
+  --color-success-surface: #10301F;
+  --color-warning: #F2B663;
+  --color-warning-text: #F2B663;
+  --color-warning-surface: #33260F;
+  --color-error: #FF9A90;
+  --color-error-text: #FF9A90;
+  --color-error-surface: #3A1714;
+  --color-info: #9CB3FF;
+  --color-info-text: #9CB3FF;
+  --color-info-surface: #17223D;
+
+  --color-diff-insert: rgba(111, 215, 154, 0.16);
+  --color-diff-remove: rgba(255, 154, 144, 0.16);
+
+  /* Dark mode uses no luminous elevation. */
+  --shadow-workspace: none;
+  --shadow-floating: 0 16px 40px rgba(0, 0, 0, 0.48);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--color-canvas);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  overflow-x: hidden;
+  background: var(--color-canvas);
+  color: var(--color-text-primary);
+  font-family: var(--font-text);
+  font-size: 16px;
+  line-height: 24px;
+  font-synthesis: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-text);
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+a {
+  color: var(--color-link);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+a:hover {
+  color: var(--color-action-text-hover);
+}
+
+::selection {
+  background: var(--color-selection);
+  color: var(--color-text-primary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* Tabular numerals for dates, counts, and measurements. */
+.numeric {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Text accents need brighter dark-theme values than filled action controls. */
+.text-action { color: var(--color-action-text); }
+.text-success { color: var(--color-success-text); }
+.text-warning { color: var(--color-warning-text); }
+.text-error { color: var(--color-error-text); }
+.text-info { color: var(--color-info-text); }
+.hover\:text-action:hover { color: var(--color-action-text-hover); }
+.hover\:text-action-hover:hover { color: var(--color-action-text-hover); }
+.group:hover .group-hover\:text-action { color: var(--color-action-text-hover); }
+
+/* ── Surface utilities ─────────────────────────────────── */
+/* One visual boundary per hierarchy level; nest at most two. */
+.surface-panel {
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  border: 1px solid var(--color-hairline);
+}
+
+.surface-card {
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  border: 1px solid var(--color-hairline);
+}
+
+.surface-outlined {
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-control);
+}
+
+.document-sheet {
+  background: var(--color-editor);
+  border: 1px solid var(--color-hairline);
+}
+
+/* ── Control field (inputs, selects) ───────────────────── */
+.control-field {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  padding: 8px 14px;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.control-field-leading-icon {
+  padding-inline-start: 40px;
+}
+
+input::placeholder,
+textarea::placeholder,
+.control-field::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+.control-field:hover:not(:disabled) {
+  border-color: var(--color-text-muted);
+}
+
+.control-field:focus {
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
+  outline: none;
+}
+
+.control-field:disabled {
+  cursor: not-allowed;
+  background: var(--color-surface-strong);
+  color: var(--color-text-muted);
+}
+
+/* ── Skip link ─────────────────────────────────────────── */
+.skip-link {
+  position: fixed;
+  left: 12px;
+  top: -64px;
+  z-index: var(--z-tooltip);
+  border-radius: var(--radius-control);
+  background: var(--color-action);
+  color: var(--color-on-action);
+  padding: 10px 16px;
+  transition: top var(--duration-fast) var(--ease-out);
+}
+
+.skip-link:focus {
+  top: 12px;
+}
+
+/* ── Skeleton ──────────────────────────────────────────── */
+.skeleton {
+  border-radius: var(--radius-control);
+  background: var(--color-surface-strong);
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+.animate-fade-in {
+  animation: state-fade var(--duration-standard) var(--ease-out) both;
+}
+@keyframes state-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ── Monaco editor theming ─────────────────────────────── */
+.monaco-editor,
+.monaco-editor .margin {
+  background: var(--color-editor) !important;
+}
+
+.monaco-editor .line-numbers {
+  color: var(--color-text-muted) !important;
+}
+
+.deltaInsertLine {
+  background-color: var(--color-diff-insert);
+}
+
+.deltaRemoveLine {
+  background-color: var(--color-diff-remove);
+}
+
+/* ── Reduced motion ────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+  .skeleton { animation: none; opacity: 0.75; }
+}

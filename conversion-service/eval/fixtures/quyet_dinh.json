@@ -1,0 +1,103 @@
+[
+  {
+    "type": "admin_header",
+    "confidence": 1.0,
+    "page": 1,
+    "left": {
+      "superior_agency": "BỘ NỘI VỤ",
+      "issuing_agency": "CỤC VĂN THƯ VÀ LƯU TRỮ NHÀ NƯỚC",
+      "document_number": "Số: 128/QĐ-VTLTNN"
+    },
+    "right": {
+      "country_name": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
+      "motto": "Độc lập - Tự do - Hạnh phúc",
+      "location_and_date": "Hà Nội, ngày 25 tháng 4 năm 2025"
+    }
+  },
+  { "type": "heading", "level": 1, "text": "QUYẾT ĐỊNH", "align": "center", "confidence": 1.0, "page": 1 },
+  {
+    "type": "paragraph", "align": "center",
+    "text": "Về việc thành lập Ban Chỉ đạo chuyển đổi số",
+    "confidence": 0.95, "page": 1
+  },
+  {
+    "type": "paragraph", "align": "justify",
+    "runs": [
+      { "text": "Căn cứ ", "italic": true },
+      { "text": "Nghị định số 30/2020/NĐ-CP ", "italic": true },
+      { "text": "ngày 05 tháng 3 năm 2020 của Chính phủ về công tác văn thư;" }
+    ],
+    "confidence": 0.95, "page": 1
+  },
+  { "type": "heading", "level": 2, "text": "Điều 1. Thành lập Ban Chỉ đạo", "confidence": 1.0, "page": 1 },
+  {
+    "type": "paragraph", "align": "justify",
+    "text": "Thành lập Ban Chỉ đạo chuyển đổi số của Cục Văn thư và Lưu trữ nhà nước gồm các thành viên có tên trong danh sách kèm theo.",
+    "confidence": 1.0, "page": 1
+  },
+  {
+    "type": "list", "ordered": true, "marker": "a)",
+    "items": [
+      { "text": "Ông Nguyễn Văn A, Cục trưởng - Trưởng ban;" },
+      { "text": "Bà Trần Thị B, Phó Cục trưởng - Phó Trưởng ban;" },
+      { "text": "Ông Lê Văn C, Chánh Văn phòng - Ủy viên." }
+    ],
+    "confidence": 1.0, "page": 1
+  },
+  { "type": "heading", "level": 2, "text": "Điều 2. Nhiệm vụ và quyền hạn", "confidence": 1.0, "page": 1 },
+  {
+    "type": "paragraph", "align": "justify",
+    "text": "Ban Chỉ đạo có nhiệm vụ xây dựng kế hoạch, tổ chức triển khai và kiểm tra việc thực hiện chuyển đổi số trong toàn Cục.",
+    "confidence": 1.0, "page": 1
+  },
+  { "type": "heading", "level": 2, "text": "Điều 3. Hiệu lực thi hành", "confidence": 1.0, "page": 1 },
+  {
+    "type": "paragraph", "align": "justify",
+    "text": "Quyết định này có hiệu lực kể từ ngày ký. Chánh Văn phòng, các đơn vị thuộc Cục và các cá nhân có tên tại Điều 1 chịu trách nhiệm thi hành Quyết định này.",
+    "confidence": 1.0, "page": 1
+  },
+  {
+    "type": "signature",
+    "confidence": 1.0, "page": 1,
+    "left": { "receipt_list": ["Như Điều 3;", "Lưu: VT, TCCB."] },
+    "right": { "authority": "KT. CỤC TRƯỞNG", "title": "PHÓ CỤC TRƯỞNG", "name": "Nguyễn Văn A" }
+  },
+  {
+    "type": "image", "kind": "seal",
+    "src": "eval/fixtures/media/seal_quyet_dinh.png",
+    "bbox": [620, 780, 850, 980],
+    "placement": "floating",
+    "anchor_block": "signature",
+    "confidence": 0.85, "page": 1
+  },
+  {
+    "type": "section_break", "orientation": "landscape", "page_size": "A4",
+    "label": "PHỤ LỤC I", "confidence": 1.0, "page": 2
+  },
+  {
+    "type": "table",
+    "headers": [
+      [
+        { "text": "STT", "rowspan": 2, "align": "center", "bold": true },
+        { "text": "Thông tin thành viên", "colspan": 2, "align": "center", "bold": true }
+      ],
+      [
+        { "text": "Họ và tên", "align": "center", "bold": true },
+        { "text": "Chức vụ", "align": "center", "bold": true }
+      ]
+    ],
+    "rows": [
+      [
+        { "text": "1", "align": "center" },
+        { "text": "Nguyễn Văn A", "align": "left" },
+        { "text": "Cục trưởng", "align": "left" }
+      ],
+      [
+        { "text": "2", "align": "center" },
+        { "text": "Trần Thị B", "align": "left" },
+        { "text": "Phó Cục trưởng", "align": "left" }
+      ]
+    ],
+    "confidence": 0.9, "page": 2
+  }
+]

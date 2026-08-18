@@ -1,0 +1,30 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DocumentRenderer.Core", "src\DocumentRenderer.Core\DocumentRenderer.Core.csproj", "{2DDB6B62-B7B3-4D75-9E51-A210C22D7291}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DocumentRenderer.Api", "src\DocumentRenderer.Api\DocumentRenderer.Api.csproj", "{5AE9A50B-F8DD-4BA0-B4BE-CA905EB53B41}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DocumentRenderer.Tests", "tests\DocumentRenderer.Tests\DocumentRenderer.Tests.csproj", "{6036C46B-E24E-489D-895A-2ED9FC369534}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2DDB6B62-B7B3-4D75-9E51-A210C22D7291}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2DDB6B62-B7B3-4D75-9E51-A210C22D7291}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2DDB6B62-B7B3-4D75-9E51-A210C22D7291}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2DDB6B62-B7B3-4D75-9E51-A210C22D7291}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5AE9A50B-F8DD-4BA0-B4BE-CA905EB53B41}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5AE9A50B-F8DD-4BA0-B4BE-CA905EB53B41}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5AE9A50B-F8DD-4BA0-B4BE-CA905EB53B41}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5AE9A50B-F8DD-4BA0-B4BE-CA905EB53B41}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6036C46B-E24E-489D-895A-2ED9FC369534}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6036C46B-E24E-489D-895A-2ED9FC369534}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6036C46B-E24E-489D-895A-2ED9FC369534}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6036C46B-E24E-489D-895A-2ED9FC369534}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule: { interval: weekly }
+    groups:
+      backend-dependencies: { patterns: ['*'] }
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly }
+    groups:
+      frontend-dependencies: { patterns: ['*'] }
+  - package-ecosystem: pip
+    directory: /docling-service
+    schedule: { interval: weekly }
+  - package-ecosystem: pip
+    directory: /embeddings-service
+    schedule: { interval: weekly }
+  - package-ecosystem: nuget
+    directory: /document-renderer
+    schedule: { interval: weekly }
+  - package-ecosystem: terraform
+    directory: /infra/terraform
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }

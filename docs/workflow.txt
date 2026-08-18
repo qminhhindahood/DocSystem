@@ -1,0 +1,43 @@
+  // Extract fields from user prompt using a lightweight LLM call
+  async function extractFields(prompt: string, docType: string): Promise<Record<string, string>> {
+    const extractionPrompt = `
+  Extract these fields from the user's request. Return as JSON.
+  If a field is missing, return empty string.
+
+  Fields: sender, receiver, date, document_number, place, subject
+
+  User request: "${prompt}"
+  `;
+    // Call LM Studio with extraction prompt
+    // Parse JSON response
+    // Return fields
+  }
+
+  Then in the frontend:
+  1. User types natural language prompt
+  2. Backend extracts fields automatically
+  3. Frontend shows editable form with extracted values
+  4. User can correct fields before generation
+  5. Corrected fields are sent with the generation request
+
+  ---
+  Does this level of detail answer your question? Should I proceed with implementation?
+
+✻ Sautéed for 1m 45s
+
+❯ /export 12626conversation
+  ⎿  Failed to export conversation: EEXIST: file already exists, mkdir 'C:\Users\PC'
+
+  7 tasks (3 done, 1 in progress, 3 open)
+  ◼ Design architecture for improved document generation
+  ◻ Implement template-aware document generation
+  ◻ Quality review and testing
+  ◻ Summary and documentation
+  ✔ Explore LLM project codebase structure
+   … +2 completed
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents
