@@ -21,7 +21,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-ai_docs}"]
       interval: 10s
@@ -32,7 +32,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -48,7 +48,7 @@ services:
     image: standalone/conversion:latest
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8004:8004"
+      - "127.0.0.1:${CONVERSION_PORT:-8004}:8004"
     environment:
       REDIS_URL: redis://redis:6379
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
@@ -75,6 +75,9 @@ services:
     image: standalone/conversion:latest
     restart: unless-stopped
     command: ["python", "worker.py"]
+    # The worker runs no HTTP server — disable the image-level /health probe.
+    healthcheck:
+      disable: true
     environment:
       REDIS_URL: redis://redis:6379
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
@@ -87,6 +90,28 @@ services:
       conversion:
         condition: service_healthy
 
+  # One-shot: apply Prisma migrations to a fresh database before the backend
+  # boots. The backend image CMD stays "node dist/index.js" (no DB mutations at
+  # container start — enforced by backend/src/index.worker_wiring.test.ts).
+  migrate:
+    image: standalone/backend:latest
+    restart: "no"
+    # Mirrors the backend "deploy:migrate" sequence: prepare_database baselines
+    # the pre-init rename migration on a fresh DB, then prisma applies the rest.
+    # node_modules/.bin is added to PATH because the runtime image strips npm/npx.
+    command:
+      - sh
+      - -c
+      - >
+        export PATH="/app/node_modules/.bin:$$PATH" &&
+        node dist/scripts/prepare_database.js &&
+        prisma migrate deploy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${DB_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-ai_docs}?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   backend:
     build:
       context: ./backend
@@ -94,7 +119,7 @@ services:
     image: standalone/backend:latest
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3001:3001"
+      - "127.0.0.1:${BACKEND_PORT:-3001}:3001"
     env_file:
       - ./backend/.env
     environment:
@@ -109,12 +134,15 @@ services:
     volumes:
       - template_storage:/data/templates
       - uploads_data:/data/uploads
+      - rag_state:/data/rag-state
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       storage-init:
+        condition: service_completed_successfully
+      migrate:
         condition: service_completed_successfully
     healthcheck:
       # /health returns 200 or 503 (degraded). 503 is EXPECTED here because
@@ -139,6 +167,7 @@ services:
     volumes:
       - template_storage:/data/templates
       - uploads_data:/data/uploads
+      - rag_state:/data/rag-state
     network_mode: none
     read_only: true
 
@@ -149,4 +178,5 @@ volumes:
     name: ${REDIS_VOLUME:-standalone_redis_data}
   template_storage:
   uploads_data:
+  rag_state:
   conversion_work:

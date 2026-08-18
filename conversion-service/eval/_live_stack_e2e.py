@@ -2,8 +2,35 @@ import io, sys, time, json, uuid, http.client, pathlib
 sys.path.insert(0, ".")
 import pymupdf
 
-TOKEN = pathlib.Path(r"C:\Users\PC\Documents\LLM\.worktrees\conversion-service\backend\_test_token.txt").read_text().strip()
-BASE = "http://127.0.0.1:3001"
+import os
+# Auth token for the backend. Resolution order:
+#   1. E2E_TOKEN env var
+#   2. <project>/backend/_test_token.txt (relative to this file's repo root)
+#   3. fail with a clear message
+_here = pathlib.Path(__file__).resolve()
+_repo_root = _here.parents[2]  # .../conversion-service-standalone
+_token_file = _repo_root / "backend" / "_test_token.txt"
+_env_token = os.environ.get("E2E_TOKEN", "").strip()
+if _env_token:
+    TOKEN = _env_token
+elif _token_file.exists():
+    TOKEN = _token_file.read_text().strip()
+else:
+    raise SystemExit(
+        "No auth token found. Set E2E_TOKEN or create "
+        f"{_token_file} with a valid backend JWT."
+    )
+BASE = os.environ.get("E2E_BASE", "http://127.0.0.1:3001")
+CONV = os.environ.get("E2E_CONVERSION", "http://127.0.0.1:8004")
+REDIS_URL = os.environ.get("E2E_REDIS", "redis://127.0.0.1:6379")
+
+def _hostport(url, default_port):
+    u = url.split("://", 1)[-1].rstrip("/")
+    host, _, port = u.partition(":")
+    return host or "127.0.0.1", int(port) if port else default_port
+
+BE_HOST, BE_PORT = _hostport(BASE, 3001)
+CV_HOST, CV_PORT = _hostport(CONV, 8004)
 
 def make_pdf(title):
     doc = pymupdf.open()
@@ -38,7 +65,7 @@ def multipart(name, filename, data):
     ).encode() + data + f"\r\n--{boundary}--\r\n".encode()
     return body, f"multipart/form-data; boundary={boundary}"
 
-conn = http.client.HTTPConnection("127.0.0.1", 3001, timeout=30)
+conn = http.client.HTTPConnection(BE_HOST, BE_PORT, timeout=30)
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 body, ctype = multipart("file", "live_stack.pdf", make_pdf("QUYẾT ĐỊNH"))
@@ -69,7 +96,7 @@ from docx import Document
 d = Document(io.BytesIO(docx))
 print("   DOCX opens: sections =", len(d.sections))
 
-c2 = http.client.HTTPConnection("127.0.0.1", 8004, timeout=15)
+c2 = http.client.HTTPConnection(CV_HOST, CV_PORT, timeout=15)
 c2.request("GET", "/metrics")
 r = c2.getresponse(); mtext = r.read().decode()
 for line in mtext.splitlines():
@@ -77,7 +104,7 @@ for line in mtext.splitlines():
         print("5. metrics:", line)
 
 import redis
-rc = redis.Redis.from_url("redis://127.0.0.1:6379", decode_responses=True)
+rc = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 qlen = rc.llen("conversion_queue")
 print("6. queue depth:", qlen)
 

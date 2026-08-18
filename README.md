@@ -39,24 +39,31 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
 
 ## Quick start
 
-### 1. Docker stack (backend + queue + worker)
+### 1. Docker stack (postgres + redis + queue + worker + backend)
 
 ```powershell
 cd conversion-service-standalone
 docker compose up -d --build
 ```
 
+Services: postgres, redis, storage-init, **migrate** (one-shot: applies all 16
+Prisma migrations to a fresh DB before the backend boots), conversion,
+conversion-worker, backend.
+
 - backend: http://localhost:3001 (health: http://localhost:3001/health)
 - conversion: http://localhost:8004 (health: http://localhost:8004/health)
-- frontend proxy: http://localhost:3001/api/convert/...
 
-Secrets: generated fresh into `.env` and `backend/.env` on first setup. Both are
-gitignored. Rotate them for any non-local deployment:
+Host ports are overridable via env if another stack holds the defaults:
 
 ```powershell
-# regenerate:
-$jwt = -join ((48..57)+(65..90)+(97..122) | Get-Random -Count 48 | % {[char]$_})
+$env:POSTGRES_PORT='5433'; $env:REDIS_PORT='6380'
+$env:BACKEND_PORT='3002';  $env:CONVERSION_PORT='8005'
+docker compose up -d
 ```
+
+Secrets live in `.env` and `backend/.env` (both gitignored, already generated).
+Rotate for any non-local deployment. `LLM_CONFIG_ENCRYPTION_KEY` must be exactly
+64 hex characters (AES-256-GCM) — the backend refuses to boot otherwise.
 
 ### 2. Frontend (dev, on :3000)
 
@@ -66,17 +73,24 @@ npm install
 npm run dev
 ```
 
-The frontend proxies `/api/*` to the backend on :3001 automatically.
+The frontend proxies `/api/*` to `BACKEND_API_URL` (default
+`http://localhost:3001`). If you moved the backend port:
+
+```powershell
+$env:BACKEND_API_URL='http://localhost:3002'; npm run dev
+```
 
 ### 3. First user
 
-Public registration is enabled by default (`DISABLE_PUBLIC_REGISTER=false`), but
-if Turnstile blocks headless flow, create a user directly:
-
 ```powershell
-docker exec -it postgres-container psql -U postgres -d ai_docs
-# UPDATE "User" SET "passwordHash" = '<bcrypt hash>' WHERE username = '...';
+docker compose run --rm `
+  -e BOOTSTRAP_USERNAME=admin `
+  -e BOOTSTRAP_EMAIL=admin@example.local `
+  -e BOOTSTRAP_PASSWORD='ChangeMe!123' `
+  backend node dist/scripts/bootstrap_user.js
 ```
+
+Then log in at http://localhost:3000/login.
 
 ## Ports / volumes / images — all isolated
 
@@ -89,9 +103,9 @@ docker exec -it postgres-container psql -U postgres -d ai_docs
 | .env secrets | fresh, gitignored | master's own |
 
 Running this project never writes to the master repo, never reuses master's
-volumes, and never overwrites master's image tags. If both stacks must run
-simultaneously, change the host ports in `docker-compose.yml` (5432/6379/3001/8004)
-and point the frontend at the new backend port.
+volumes, and never overwrites master's image tags. To run both stacks at once,
+set the port overrides above (5433/6380/3002/8005) and point the frontend at
+the new backend port.
 
 ## Layout of the conversion pipeline
 
@@ -119,6 +133,26 @@ npm install && npm test                     # 661 tests
 
 cd ..\frontend
 npm install && npm test                     # 320 tests
+```
+
+Fixture seals are generated artifacts (gitignored). Regenerate before running
+the P0a gate on a fresh clone:
+
+```powershell
+cd conversion-service
+.venv\Scripts\python.exe eval\fixtures\_make_seals.py
+.venv\Scripts\python.exe eval\verify_p0a.py   # P0a gate: 57 checks
+```
+
+Live full-stack E2E (requires the compose stack running + a logged-in user):
+
+```powershell
+cd conversion-service
+# token: log in via /api/auth/login, or save a JWT to ..\backend\_test_token.txt
+$env:E2E_BASE='http://127.0.0.1:3001'        # backend
+$env:E2E_CONVERSION='http://127.0.0.1:8004'  # conversion service
+$env:E2E_REDIS='redis://127.0.0.1:6379'
+.venv\Scripts\python.exe eval\_live_stack_e2e.py
 ```
 
 ## Plan reference
