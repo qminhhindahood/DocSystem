@@ -20,6 +20,7 @@ from render.docx_builder import DocxBlockBuilder
 from rules.rule_engine import RuleEngine
 from schema.blocks import Block, blocks_to_dicts, parse_blocks
 from schema.validator import validate_chunk
+from structuring.admin_zones import build_admin_header, build_signature
 from structuring.classifier import Classifier, LineInfo
 from structuring.zones import extract_lines, partition_zones
 from triage.triage import DIGITAL_TEXT, SCANNED, TABLE_HEAVY, triage_page
@@ -40,6 +41,9 @@ class ConversionReport:
     flagged_blocks: list[dict] = field(default_factory=list)   # block < 0.6
     low_confidence_pages: list[dict] = field(default_factory=list)  # page avg < 0.7
     demotions: int = 0                                          # Stage-4 rate input
+    extracted_chars: int = 0                                    # text-layer chars seen
+    output_chars: int = 0                                       # content chars emitted
+    coverage: float = 0.0                                       # output/extracted ratio
 
 
 def _extract_text_page_lines(page, page_number: int) -> list[LineInfo]:
@@ -54,7 +58,11 @@ def _extract_text_page_lines(page, page_number: int) -> list[LineInfo]:
             spans = ln.get("spans", [])
             if not spans:
                 continue
-            text = "".join(s.get("text", "") for s in spans).strip()
+            text = "".join(s.get("text", "") for s in spans)
+            # Normalize non-breaking spaces and soft hyphens so downstream
+            # pattern matching and line-merge see ordinary text.
+            text = text.replace("\u00a0", " ").replace("\u00ad", "-")
+            text = " ".join(text.split())
             if not text:
                 continue
             bbox = ln.get("bbox", (0, 0, 0, 0))
@@ -64,12 +72,20 @@ def _extract_text_page_lines(page, page_number: int) -> list[LineInfo]:
             italic = bool(flags & 2 ** 1)
             x0, y0, x1, y1 = bbox
             cx = (x0 + x1) / 2
-            centered = abs(cx - page_w / 2) < page_w * 0.08
+            line_w = x1 - x0
+            # A line is "centered" only when its midpoint sits near the page
+            # center AND it is short. A justified body line spans ~the whole
+            # text area, so its bbox center also lands near the page center —
+            # that is justification, not centering. Long lines (> 60% of page
+            # width) are never treated as centered regardless of midpoint.
+            near_center = abs(cx - page_w / 2) < page_w * 0.08
+            short_line = line_w < page_w * 0.60
+            centered = near_center and short_line
             indented = x0 > page.rect.width * 0.12
             lines.append(LineInfo(
                 text=text, size=size, bold=bold, italic=italic,
                 centered=centered, indented=indented,
-                page=page_number, y=y0, y1=y1,
+                page=page_number, y=y0, y1=y1, x0=x0, x1=x1,
             ))
     lines.sort(key=lambda l: l.y)
     return lines
@@ -89,6 +105,7 @@ def convert_pdf(pdf_path: str, out_path: str,
 
         all_blocks: list[Block] = []
         page_index_map: dict[int, int] = {}
+        sig_candidates: dict[int, Block] = {}
         classifier = Classifier()
 
         # 2. Triage + 3. Extract/Structure (per page)
@@ -101,9 +118,22 @@ def convert_pdf(pdf_path: str, out_path: str,
 
             if ptype == DIGITAL_TEXT:
                 lines = _extract_text_page_lines(page, page_no)
+                report.extracted_chars += sum(len(l.text) for l in lines)
                 zones = partition_zones(lines, page_no, page.rect.width, page.rect.height)
-                # body lines through the cascade; header/signature zones are
-                # serialized by zone clustering in a later refinement (P0b).
+                # Page-1 header zone -> AdminHeaderBlock (Quốc hiệu, tiêu ngữ,
+                # cơ quan ban hành, số/KH, địa danh - ngày). Previously these
+                # mandatory Decree-30 components were silently discarded.
+                if page_no == 1:
+                    hdr = build_admin_header(zones.header, page_no, page.rect.width)
+                    if hdr is not None:
+                        all_blocks.append(hdr)
+                # Signature zone -> SignatureBlock (Nơi nhận + chữ ký), kept
+                # for the LAST page that carries one (multi-page docs sign at
+                # the end; earlier bottom zones are usually footers).
+                sig = build_signature(zones.signature, page_no, page.rect.width)
+                if sig is not None:
+                    sig_candidates[page_no] = sig
+                # body lines through the 4-stage cascade
                 blocks = classifier.structure(zones.body)
                 for b in blocks:
                     if getattr(b, "page", None) is None:
@@ -112,7 +142,15 @@ def convert_pdf(pdf_path: str, out_path: str,
             elif ptype == TABLE_HEAVY:
                 # Primary: find_tables (free). Quality gate -> Gemini fallback (P1).
                 lines = _extract_text_page_lines(page, page_no)
+                report.extracted_chars += sum(len(l.text) for l in lines)
                 zones = partition_zones(lines, page_no, page.rect.width, page.rect.height)
+                if page_no == 1:
+                    hdr = build_admin_header(zones.header, page_no, page.rect.width)
+                    if hdr is not None:
+                        all_blocks.append(hdr)
+                sig = build_signature(zones.signature, page_no, page.rect.width)
+                if sig is not None:
+                    sig_candidates[page_no] = sig
                 blocks = classifier.structure(zones.body)
                 for b in blocks:
                     if getattr(b, "page", None) is None:
@@ -125,6 +163,12 @@ def convert_pdf(pdf_path: str, out_path: str,
                 report.warnings.append(
                     f"page {page_no}: scanned page requires Gemini vision (not configured)"
                 )
+
+        # Emit the signature block from the LAST page that carried one —
+        # Decree-30 documents sign at the end; bottom zones on earlier pages
+        # are footers, not signatures.
+        if sig_candidates:
+            all_blocks.append(sig_candidates[max(sig_candidates)])
 
         # 4. Assembly / stitching
         media = media_dir or str(config.MEDIA_DIR)
@@ -139,9 +183,44 @@ def convert_pdf(pdf_path: str, out_path: str,
         builder = DocxBlockBuilder(rules)
         builder.save(all_blocks, out_path)
 
-        # 7. Deliver — confidence summary + status
+        # 7. Deliver — confidence summary + status.
+        #
+        # Confidence is NEVER allowed to default to 1.0: an empty or partial
+        # output must say so. We combine (a) the mean block confidence with
+        # (b) a coverage ratio — content chars emitted vs text-layer chars
+        # extracted. Empty output on a non-empty text layer is a hard failure,
+        # not a perfect score.
+        report.output_chars = _content_chars(all_blocks)
+        if report.extracted_chars > 0:
+            report.coverage = min(1.0, report.output_chars / report.extracted_chars)
+        else:
+            report.coverage = 0.0
+
         confs = [b.confidence for b in all_blocks]
-        report.confidence = sum(confs) / len(confs) if confs else 1.0
+        if not confs or report.output_chars == 0:
+            if report.extracted_chars > 0:
+                # Text was available but nothing usable was emitted.
+                report.confidence = 0.0
+                report.status = "failed"
+                report.warnings.append(
+                    "no content blocks were produced from a non-empty text layer"
+                )
+            else:
+                report.confidence = 0.0
+                report.status = "failed"
+                report.warnings.append("document contained no extractable text")
+        else:
+            block_avg = sum(confs) / len(confs)
+            # Coverage caps confidence: emitting 40% of the source text can
+            # never be a 1.0 conversion.
+            report.confidence = round(min(block_avg, report.coverage), 3)
+            if report.coverage < config.COVERAGE_WARN_THRESHOLD:
+                report.status = "completed_with_warnings"
+                report.warnings.append(
+                    f"content coverage is {report.coverage:.0%} of the extracted "
+                    f"text layer ({report.output_chars}/{report.extracted_chars} chars)"
+                )
+
         if report.degraded_pages:
             failed_ratio = len(report.degraded_pages) / max(report.pages, 1)
             if failed_ratio > config.FAILED_PAGE_RATIO or 1 in report.degraded_pages:
@@ -171,6 +250,30 @@ def _block_preview(block: Block, limit: int = 80) -> str:
         text = ""
     text = " ".join(text.split())
     return text[:limit]
+
+
+def _content_chars(blocks: list[Block]) -> int:
+    """Total content characters emitted across all blocks (coverage input)."""
+    total = 0
+    for b in blocks:
+        t = getattr(b, "type", None)
+        if t in ("paragraph", "heading"):
+            total += len((getattr(b, "text", None) or "").strip())
+        elif t == "list":
+            total += sum(len((it.text or "").strip()) for it in b.items)
+        elif t == "table":
+            for row in list(b.headers) + list(b.rows):
+                total += sum(len((c.text or "").strip()) for c in row)
+        elif t == "admin_header":
+            for v in (b.left.superior_agency, b.left.issuing_agency,
+                      b.left.document_number, b.right.country_name,
+                      b.right.motto, b.right.location_and_date):
+                total += len((v or "").strip())
+        elif t == "signature":
+            total += sum(len(r.strip()) for r in b.left.receipt_list)
+            for v in (b.right.authority, b.right.title, b.right.name):
+                total += len((v or "").strip())
+    return total
 
 
 def _flagged_blocks(blocks: list[Block]) -> list[dict]:

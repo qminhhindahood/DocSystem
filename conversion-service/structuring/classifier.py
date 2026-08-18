@@ -54,6 +54,8 @@ class LineInfo:
     page: int = 1
     y: float = 0.0
     y1: float = 0.0
+    x0: float = 0.0
+    x1: float = 0.0
 
     @property
     def cy(self) -> float:
@@ -69,6 +71,82 @@ class Classified:
     marker: Optional[str] = None
     stage: int = 3               # which stage decided (2=pattern, 3=typo)
     confidence: float = 1.0
+
+
+# ─── Stage 0: wrapped-line merge (intra-page paragraph reassembly) ────────────
+#
+# PyMuPDF reports each VISUAL line separately; a justified paragraph wrapped
+# over 3 lines arrives as 3 LineInfo objects. Classifying them independently
+# produces 3 one-line paragraphs (and any naive concatenation loses the space
+# at the wrap point). We merge continuation lines back into their paragraph
+# BEFORE classification, joining with a single space.
+
+_TERMINAL_END = (".", ":", ";", "!", "?", "\"", "\"")
+
+
+def _is_structural_start(line: LineInfo) -> bool:
+    """True when a line looks like the START of a new logical unit and must
+    never be swallowed as a continuation of the previous line."""
+    if classify_pattern(line) is not None:
+        return True
+    text = line.text.strip()
+    is_upper = text == text.upper() and any(ch.isalpha() for ch in text)
+    # centered + bold short line = title/heading candidate (stage 3). We accept
+    # any case because Decree-30 titles often have a mixed-case second line
+    # ("QUYẾT ĐỊNH" / "Về việc ...").
+    if line.centered and line.bold and len(text) < 60:
+        return True
+    if line.centered and is_upper and len(text) < 60:
+        return True
+    return False
+
+
+def merge_wrapped_lines(lines: list[LineInfo]) -> list[LineInfo]:
+    """Join visual lines that are continuations of the previous paragraph.
+
+    A line merges into its predecessor when ALL hold:
+    - same page;
+    - the predecessor does not end in terminal punctuation (. : ; ! ?);
+    - the current line is not a structural start (numbering pattern or
+      centered-bold-uppercase title);
+    - similar font size (within 1.5 pt — same paragraph run);
+    - small vertical gap (< 1.6x the predecessor line height — no blank
+      line between them).
+
+    The merge inserts a single space, fixing the wrap-point space loss.
+    """
+    out: list[LineInfo] = []
+    last_h: list[float] = []  # height of the last PHYSICAL line per merged group
+    for line in lines:
+        line_h = max(line.y1 - line.y, 1.0)
+        if out:
+            prev = out[-1]
+            prev_text = prev.text.rstrip()
+            # Gap threshold uses the height of the most recent physical line,
+            # NOT the accumulated paragraph span (which would balloon and let
+            # everything merge).
+            height = last_h[-1]
+            gap = line.y - prev.y1
+            same_page = prev.page == line.page
+            open_end = bool(prev_text) and not prev_text.endswith(_TERMINAL_END)
+            similar_size = abs(line.size - prev.size) <= 1.5
+            close = gap < 1.6 * height
+            # A centered title/heading never absorbs a non-centered body line
+            # (and vice versa) — that is a block boundary, not a wrap.
+            same_align = prev.centered == line.centered
+            if (same_page and open_end and close and similar_size and same_align
+                    and not _is_structural_start(line)):
+                prev.text = f"{prev_text} {line.text.strip()}"
+                prev.y1 = line.y1
+                prev.x1 = max(prev.x1, line.x1)
+                # keep the paragraph's boldest/largest styling hint
+                prev.bold = prev.bold or line.bold
+                prev.size = max(prev.size, line.size)
+                last_h[-1] = line_h  # next gap measured against THIS line
+                continue
+        out.append(line)
+        last_h.append(line_h)
+    return out
 
 
 # ─── Stage 1: baseline ────────────────────────────────────────────────────────
@@ -154,6 +232,7 @@ class Classifier:
         self.hier = HierarchyState()
 
     def structure(self, lines: list[LineInfo]) -> list:
+        lines = merge_wrapped_lines(lines)
         baseline = compute_baseline(lines)
         blocks: list = []
         pending_points: list[Classified] = []
