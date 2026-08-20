@@ -19,7 +19,7 @@ longer normative for any surface. Their tokens, type ramps, tile compositions, a
 component grammars must not be reintroduced.
 
 Product truth — users, purpose, personality, anti-references, accessibility — lives in
-`PRODUCT.md` and is unchanged by this document.
+the repository-root `PRODUCT.md` and is unchanged by this document.
 
 ## Reference hierarchy
 

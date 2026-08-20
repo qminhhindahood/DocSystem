@@ -48,11 +48,19 @@ class _MemoryStore:
 class JobStore:
     """Job state store: Redis when reachable, in-memory otherwise."""
 
-    def __init__(self, redis_url: Optional[str] = None):
+    def __init__(self, redis_url: Optional[str] = None, redis_client=None):
         self.redis_url = redis_url or config.REDIS_URL
         self._redis = None
         self._memory = _MemoryStore()
-        self._connect()
+        if redis_client is not None:
+            self._redis = redis_client
+        else:
+            self._connect()
+
+    @property
+    def redis_client(self):
+        """Public read access to the underlying Redis client (None in fallback mode)."""
+        return self._redis
 
     def _connect(self) -> None:
         try:
@@ -123,18 +131,68 @@ class JobStore:
         raise RuntimeError("Redis is required for queue mode")
 
     def dequeue(self, timeout: int = config.QUEUE_POLL_TIMEOUT_S) -> Optional[dict[str, Any]]:
-        """Blocking pop from the conversion_queue (worker side)."""
+        """Atomically pop a job from the queue into the processing list.
+
+        The payload stays visible in the processing list until the worker
+        reports a terminal state (finish_processing), so a crashed worker
+        leaves it behind for startup reclaim instead of losing it.
+        """
         if self._redis is None:
             return None
         try:
-            item = self._redis.brpop(config.CONVERSION_QUEUE_KEY, timeout=timeout)
+            payload = self._redis.brpoplpush(
+                config.CONVERSION_QUEUE_KEY,
+                config.CONVERSION_PROCESSING_KEY,
+                timeout=timeout,
+            )
         except Exception as e:  # noqa: BLE001
             logger.warning("JobStore: dequeue failed (%s)", e)
             return None
-        if not item:
+        if not payload:
             return None
-        _, payload = item
         try:
             return json.loads(payload)
         except json.JSONDecodeError:
+            # Corrupt payload: drop it from the processing list so it is not
+            # reclaimed forever.
+            try:
+                self._redis.lrem(config.CONVERSION_PROCESSING_KEY, 1, payload)
+            except Exception:  # noqa: BLE001
+                pass
             return None
+
+    def finish_processing(self, job: dict[str, Any]) -> None:
+        """Remove the job's payload from the processing list (terminal state)."""
+        if self._redis is None:
+            return
+        payload = json.dumps(job, ensure_ascii=False)
+        try:
+            self._redis.lrem(config.CONVERSION_PROCESSING_KEY, 1, payload)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("JobStore: finish_processing failed (%s)", e)
+
+    def reclaim_processing(self) -> int:
+        """Re-queue every payload left in the processing list (worker startup).
+
+        A payload still sitting there means the previous worker died before
+        finishing it; the job is re-queued intact. Returns the reclaim count.
+        """
+        if self._redis is None:
+            return 0
+        reclaimed = 0
+        try:
+            while True:
+                payload = self._redis.rpoplpush(
+                    config.CONVERSION_PROCESSING_KEY, config.CONVERSION_QUEUE_KEY
+                )
+                if payload is None:
+                    break
+                reclaimed += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning("JobStore: reclaim_processing failed (%s)", e)
+        if reclaimed:
+            logger.info(
+                "JobStore: reclaimed %d in-flight job(s) from a previous worker",
+                reclaimed,
+            )
+        return reclaimed

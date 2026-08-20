@@ -24,6 +24,8 @@ export interface ConversionJobStatus {
   confidence?: number | null;
   degradedPages?: number[];
   error?: string | null;
+  /** Owning user id — used to owner-scope reads (ticket 03); never echoed to clients. */
+  userId?: string | null;
 }
 
 /** Submit a PDF (on disk) for conversion. Returns the service jobId. */
@@ -65,6 +67,8 @@ export interface ConversionReport {
   status: string | null;
   confidence: number | null;
   degradedPages: number[];
+  /** Owning user id — used to owner-scope reads (ticket 03); never echoed to clients. */
+  userId?: string | null;
   flaggedBlocks: Array<{
     index: number; type: string; page: number | null;
     confidence: number; preview: string;

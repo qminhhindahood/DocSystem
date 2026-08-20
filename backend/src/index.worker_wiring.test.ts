@@ -1,26 +1,24 @@
 import fs from 'fs';
 import path from 'path';
 
-describe('backend worker wiring', () => {
-  it('starts the durable ingestion worker and stops it during shutdown', () => {
+describe('backend boot wiring (standalone conversion product)', () => {
+  it('boots without master-stack background workers', () => {
     const source = fs.readFileSync(path.join(__dirname, 'index.ts'), 'utf8');
 
-    expect(source).toMatch(/createDefaultIngestionWorker\(\)/);
-    expect(source).toMatch(/ingestionWorker\.start\(\)/);
-    expect(source).toMatch(/ingestionWorker\?\.stop\(shutdownGraceMs\)/);
-    expect(source).toMatch(/createDefaultTemplateCompilationWorker\(\)/);
-    expect(source).toMatch(/templateCompilationWorker\?\.stop\(shutdownGraceMs\)/);
+    expect(source).not.toContain('ingestionWorker');
+    expect(source).not.toContain('templateCompilationWorker');
+    expect(source).not.toContain('createDefaultIngestionWorker');
+    expect(source).not.toContain('createDefaultTemplateCompilationWorker');
   });
 
-  it('does not start the worker until the HTTP server has successfully bound', () => {
+  it('mounts only the auth and convert route surfaces', () => {
     const source = fs.readFileSync(path.join(__dirname, 'index.ts'), 'utf8');
-    const listenIndex = source.indexOf('await listenForReady()');
-    const workerStartIndex = source.indexOf('ingestionWorker.start()');
-    const templateWorkerStartIndex = source.indexOf('templateCompilationWorker.start()');
 
-    expect(listenIndex).toBeGreaterThan(-1);
-    expect(workerStartIndex).toBeGreaterThan(listenIndex);
-    expect(templateWorkerStartIndex).toBeGreaterThan(listenIndex);
+    expect(source).toContain("app.use('/api/auth', authRoutes)");
+    expect(source).toContain("app.use('/api/convert', convertRoutes)");
+    for (const dead of ['qaRoutes', 'ragRoutes', 'workflowRoutes', 'templateRoutes', 'feedbackRoutes', 'llmSettingsRoutes', 'documentsRoutes', 'documentProfileRoutes']) {
+      expect(source).not.toContain(dead);
+    }
   });
 
   it('does not terminate the process before shutdown resources close', () => {
@@ -45,14 +43,12 @@ describe('backend worker wiring', () => {
     expect(command).not.toMatch(/migrate|prepare_database|sh\s+-c/i);
   });
 
-  it('orders migration preflight, deployment, and ownership verification explicitly', () => {
+  it('orders migration deployment and bootstrap explicitly', () => {
     const packageJson = JSON.parse(
       fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'),
     ) as { scripts?: Record<string, string> };
 
-    expect(packageJson.scripts?.['deploy:migrate']).toBe(
-      'node dist/scripts/prepare_database.js && prisma migrate deploy && node dist/scripts/assert_owner_integrity.js',
-    );
+    expect(packageJson.scripts?.['deploy:migrate']).toBe('prisma migrate deploy');
     expect(packageJson.scripts?.['deploy:bootstrap']).toBe('node dist/scripts/bootstrap_user.js');
   });
 });

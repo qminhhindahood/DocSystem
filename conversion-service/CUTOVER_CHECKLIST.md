@@ -39,11 +39,10 @@ Run `python eval/preflight.py --url http://<host>:8004` first; it must report
 
 ## 4. Rollback
 
-The conversion service is fully additive — nothing in the generation pipeline
-depends on it.
+The conversion service is the product's only processing path; stopping it
+stops conversions but never loses data.
 
-1. Remove the nav entry is NOT required; failing calls degrade to a toast.
-2. `docker compose stop conversion-worker conversion` — backend returns 502
+1. `docker compose stop conversion-worker conversion` — backend returns 502
    "Conversion service unavailable" (circuit breaker opens after 3 failures,
    half-opens after 60 s).
 3. No schema migrations to revert; job state lives in Redis with 24 h TTL and

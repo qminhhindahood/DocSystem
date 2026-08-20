@@ -70,6 +70,7 @@ BULK_MAX_FILES = int(os.environ.get("CONVERSION_BULK_MAX_FILES", "10"))
 # ─── Redis queue (P3, plan §8) ────────────────────────────────────────────────
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 CONVERSION_QUEUE_KEY = "conversion_queue"
+CONVERSION_PROCESSING_KEY = "conversion_processing"
 JOB_STATE_PREFIX = "conversion:job:"
 JOB_STATE_TTL_S = int(os.environ.get("CONVERSION_JOB_TTL_S", str(24 * 3600)))  # file TTL
 FILE_TTL_S = int(os.environ.get("CONVERSION_FILE_TTL_S", str(24 * 3600)))      # auto-delete

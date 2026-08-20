@@ -1,4 +1,5 @@
-import { validate, GenerateDocumentSchema, FeedbackSchema, StructuredOutputRequestSchema } from './validation';
+import { validate, MAX_FILE_SIZE, ALLOWED_MIME_TYPES } from './validation';
+import { z } from 'zod';
 
 function createResponse() {
   return {
@@ -7,37 +8,39 @@ function createResponse() {
   };
 }
 
+const SampleSchema = z.object({
+  body: z.object({
+    prompt: z.string().trim().min(1).max(100),
+  }),
+});
+
 describe('validate middleware', () => {
-  it('accepts documentType and normalizes it to docType for generation requests', () => {
+  it('passes parsed body through to the handler', () => {
     const req: any = {
-      body: { prompt: 'Draft an official letter', documentType: 'cong-van' },
+      body: { prompt: 'Convert this PDF' },
       query: {},
       params: {},
     };
     const res = createResponse();
     const next = jest.fn();
 
-    validate(GenerateDocumentSchema as any)(req, res as any, next);
+    validate(SampleSchema)(req, res as any, next);
 
     expect(next).toHaveBeenCalledWith();
     expect(res.status).not.toHaveBeenCalled();
-    expect(req.body).toMatchObject({
-      prompt: 'Draft an official letter',
-      docType: 'cong-van',
-      documentType: 'cong-van',
-    });
+    expect(req.body).toMatchObject({ prompt: 'Convert this PDF' });
   });
 
-  it('rejects blank generation prompts with a 400 response', () => {
+  it('rejects invalid bodies with a 400 response', () => {
     const req: any = {
-      body: { prompt: '   ', documentType: 'cong-van' },
+      body: { prompt: '   ' },
       query: {},
       params: {},
     };
     const res = createResponse();
     const next = jest.fn();
 
-    validate(GenerateDocumentSchema as any)(req, res as any, next);
+    validate(SampleSchema)(req, res as any, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(400);
@@ -46,40 +49,8 @@ describe('validate middleware', () => {
     );
   });
 
-  it('normalizes legacy feedback field names from the frontend', () => {
-    const req: any = {
-      body: {
-        original: 'before',
-        edited: 'after',
-        documentType: 'cong-van',
-      },
-      query: {},
-      params: {},
-    };
-    const res = createResponse();
-    const next = jest.fn();
-
-    validate(FeedbackSchema as any)(req, res as any, next);
-
-    expect(next).toHaveBeenCalledWith();
-    expect(req.body).toMatchObject({
-      originalContent: 'before',
-      editedContent: 'after',
-      docType: 'cong-van',
-    });
-  });
-
-  it('bounds structured output tokens and custom schema complexity', () => {
-    const oversizedTokens = StructuredOutputRequestSchema.safeParse({
-      body: { prompt: 'Generate', docType: 'cong-van', maxTokens: 8_193 },
-    });
-    expect(oversizedTokens.success).toBe(false);
-
-    let nested: Record<string, unknown> = { type: 'string' };
-    for (let depth = 0; depth < 14; depth += 1) nested = { properties: nested };
-    const excessiveSchema = StructuredOutputRequestSchema.safeParse({
-      body: { prompt: 'Generate', schema: nested },
-    });
-    expect(excessiveSchema.success).toBe(false);
+  it('exposes PDF upload limits for the conversion surface', () => {
+    expect(MAX_FILE_SIZE).toBe(50 * 1024 * 1024);
+    expect(ALLOWED_MIME_TYPES).toEqual(['application/pdf']);
   });
 });

@@ -270,7 +270,7 @@ describe('AuthForm — signup', () => {
     await user.click(screen.getByRole('button', { name: 'Tạo tài khoản' }));
 
     await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith('/dashboard');
+      expect(mockReplace).toHaveBeenCalledWith('/convert');
     });
   });
 

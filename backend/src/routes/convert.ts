@@ -49,6 +49,21 @@ const router = express.Router();
 
 type MulterRequest = Request & { file?: Express.Multer.File };
 
+/**
+ * Owner-scope guard (ticket 03): verify the Conversion Job belongs to the
+ * authenticated user before anything is returned. Unknown job and
+ * not-your-job are indistinguishable (both surface as 404), so job ids are
+ * never confirmed to strangers. A job with no recorded owner is denied.
+ */
+async function assertJobOwner(jobId: string, userId: string): Promise<void> {
+  const status = await getConversionStatus(jobId);
+  if (status.userId !== userId) {
+    const err: any = new Error('Unknown jobId');
+    err.response = { status: 404 };
+    throw err;
+  }
+}
+
 async function isPdfFile(filePath: string): Promise<boolean> {
   const handle = await fs.promises.open(filePath, 'r');
   try {
@@ -137,8 +152,10 @@ router.post(
 /** GET /api/convert/:jobId — poll job status. */
 router.get('/:jobId', userAuthMiddleware, requireAuth, async (req, res) => {
   try {
+    await assertJobOwner(req.params.jobId, req.user!.userId);
     const status = await getConversionStatus(req.params.jobId);
-    return res.json({ success: true, ...status });
+    const { userId: _owner, ...publicStatus } = status;
+    return res.json({ success: true, ...publicStatus });
   } catch (error: any) {
     if (error?.response?.status === 404) {
       return res.status(404).json({ error: 'Unknown jobId' });
@@ -151,8 +168,10 @@ router.get('/:jobId', userAuthMiddleware, requireAuth, async (req, res) => {
 /** GET /api/convert/:jobId/report — confidence-flag review report (P4). */
 router.get('/:jobId/report', userAuthMiddleware, requireAuth, async (req, res) => {
   try {
+    await assertJobOwner(req.params.jobId, req.user!.userId);
     const report = await getConversionReport(req.params.jobId);
-    return res.json({ success: true, ...report });
+    const { userId: _owner, ...publicReport } = report;
+    return res.json({ success: true, ...publicReport });
   } catch (error: any) {
     if (error?.response?.status === 404) {
       return res.status(404).json({ error: 'Unknown jobId' });
@@ -165,6 +184,7 @@ router.get('/:jobId/report', userAuthMiddleware, requireAuth, async (req, res) =
 /** GET /api/convert/:jobId/result — download the converted DOCX. */
 router.get('/:jobId/result', userAuthMiddleware, requireAuth, async (req, res) => {
   try {
+    await assertJobOwner(req.params.jobId, req.user!.userId);
     const buffer = await getConversionResult(req.params.jobId);
     if (!buffer) {
       return res.status(409).json({ error: 'Result not ready or expired' });

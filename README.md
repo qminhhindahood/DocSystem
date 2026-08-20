@@ -14,7 +14,7 @@ here touches the master stack or repo.
 | `backend/` | Node/Express BFF API (auth, /api/convert routes, proxy to service) |
 | `frontend/` | Next.js UI (convert page: upload, progress, review, download) |
 | `shared/decree30-typography.json` | Single source of Decree-30 typography (CI-checked) |
-| `docker-compose.yml` | Standalone stack: postgres, redis, conversion, conversion-worker, backend |
+| `docker-compose.yml` | Standalone stack: postgres, redis, storage-init, migrate, conversion, conversion-worker, backend, frontend |
 | `init.sql` | Postgres bootstrap schema |
 
 ## Architecture
@@ -24,7 +24,7 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
         │                                                    │
         └── poll GET /api/convert/:jobId ◄── Redis conversion_queue
                                             │
-                                conversion-worker (BLPOP)
+                                conversion-worker (BRPOPLPUSH)
                                             │
                                    pipeline → DOCX + report
 ```
@@ -37,35 +37,43 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
   `/api/convert` path never touches them (backend `/health` may report degraded;
   that's expected here).
 
-## Quick start
-
-### 1. Docker stack (postgres + redis + queue + worker + backend)
+## Quick start — one command runs the whole product
 
 ```powershell
 cd conversion-service-standalone
 docker compose up -d --build
 ```
 
-Services: postgres, redis, storage-init, **migrate** (one-shot: applies all 16
-Prisma migrations to a fresh DB before the backend boots), conversion,
-conversion-worker, backend.
+That single command builds and starts everything: postgres, redis, storage-init,
+**migrate** (one-shot: applies the single squashed auth migration to a fresh DB
+before the backend boots), conversion, conversion-worker, backend, and the
+production frontend.
 
+- **frontend: http://localhost:3000** (the product UI — upload, progress, download)
 - backend: http://localhost:3001 (health: http://localhost:3001/health)
 - conversion: http://localhost:8004 (health: http://localhost:8004/health)
+
+The frontend container is a Next.js standalone production build that proxies
+`/api/*` to the backend inside the compose network (`BACKEND_API_URL` is
+injected at container start, not baked into the image).
 
 Host ports are overridable via env if another stack holds the defaults:
 
 ```powershell
 $env:POSTGRES_PORT='5433'; $env:REDIS_PORT='6380'
 $env:BACKEND_PORT='3002';  $env:CONVERSION_PORT='8005'
+$env:FRONTEND_PORT='3006'
 docker compose up -d
 ```
 
 Secrets live in `.env` and `backend/.env` (both gitignored, already generated).
-Rotate for any non-local deployment. `LLM_CONFIG_ENCRYPTION_KEY` must be exactly
-64 hex characters (AES-256-GCM) — the backend refuses to boot otherwise.
+Rotate for any non-local deployment. The backend refuses to boot without
+`DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, and `CONVERSION_SERVICE_URL`
+(see `backend/.env.example` for the full contract).
 
-### 2. Frontend (dev, on :3000)
+### Frontend development (optional, hot reload)
+
+If you're iterating on the UI, run the dev server instead of the container:
 
 ```powershell
 cd frontend
@@ -73,14 +81,14 @@ npm install
 npm run dev
 ```
 
-The frontend proxies `/api/*` to `BACKEND_API_URL` (default
+The dev frontend proxies `/api/*` to `BACKEND_API_URL` (default
 `http://localhost:3001`). If you moved the backend port:
 
 ```powershell
 $env:BACKEND_API_URL='http://localhost:3002'; npm run dev
 ```
 
-### 3. First user
+### First user
 
 ```powershell
 docker compose run --rm `
@@ -99,7 +107,7 @@ Then log in at http://localhost:3000/login.
 | Compose project | `conversion-service-standalone` | `llm` |
 | Postgres volume | `${POSTGRES_VOLUME:-standalone_postgres_data}` | `llm_postgres_data` |
 | Redis volume | `${REDIS_VOLUME:-standalone_redis_data}` | `llm_redis_data` |
-| Images | `standalone/conversion:latest`, `standalone/backend:latest` | `miralph/llm-*` |
+| Images | `standalone/conversion:latest`, `standalone/backend:latest`, `standalone/frontend:latest` | `miralph/llm-*` |
 | .env secrets | fresh, gitignored | master's own |
 
 Running this project never writes to the master repo, never reuses master's
@@ -112,7 +120,7 @@ the new backend port.
 `conversion-service/`:
 
 - `main.py` — FastAPI: `/convert` (single), `/convert/bulk` (≤10), `/convert/{id}/report`, `/metrics`, `/health`
-- `worker.py` — Redis `conversion_queue` consumer (BLPOP), writes job state + metrics
+- `worker.py` — Redis `conversion_queue` consumer (BRPOPLPUSH + startup reclaim), writes job state + metrics
 - `job_store.py` — job state in Redis with TTL (86400s), memory fallback
 - `quota.py` — per-user daily cap
 - `metrics.py` — Prometheus counters; worker → Redis aggregation → `/metrics`
@@ -129,10 +137,10 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pytest          # 50 tests
 
 cd ..\backend
-npm install && npm test                     # 661 tests
+npm install && npm test                     # 198 tests
 
 cd ..\frontend
-npm install && npm test                     # 320 tests
+npm install && npm test                     # 184 tests
 ```
 
 Fixture seals are generated artifacts (gitignored). Regenerate before running
@@ -155,10 +163,11 @@ $env:E2E_REDIS='redis://127.0.0.1:6379'
 .venv\Scripts\python.exe eval\_live_stack_e2e.py
 ```
 
-## Plan reference
+## Certification status
 
-Implementation follows `CONVERSION_SERVICE_PLAN.md` (P0a → P4). Phase P1
-(Gemini scanned-PDF vision) is implemented but requires `GEMINI_API_KEY` +
-a scanned-PDF corpus to certify; the digital-text path is fully certified.
-Every requirement of the Decree-30 constraints (LLM never formats; validated
-JSON contracts; rule engine applies styling) is enforced in code + tests.
+Phase P1 (Gemini scanned-PDF vision) is implemented but requires
+`GEMINI_API_KEY` + a scanned-PDF corpus to certify; the digital-text path is
+fully certified (P0a gate). Every requirement of the Decree-30 constraints
+(LLM never formats; validated JSON contracts; rule engine applies styling) is
+enforced in code + tests. See `conversion-service/README.md` for phase status
+and `conversion-service/CUTOVER_CHECKLIST.md` for the production checklist.

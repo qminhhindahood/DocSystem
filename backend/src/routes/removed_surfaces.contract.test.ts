@@ -63,3 +63,83 @@ describe('removed runtime surfaces', () => {
     expect(indexSrc).not.toContain('lora');
   });
 });
+
+describe('removed master-stack surfaces (standalone prune, ticket 04)', () => {
+  const srcRoot = path.resolve(__dirname, '..');
+
+  it.each([
+    'qa', 'rag', 'workflow', 'templates', 'feedback',
+    'llm-settings', 'documents', 'document-profile',
+  ])('route %s is deleted', (name) => {
+    expect(fs.existsSync(path.join(srcRoot, 'routes', `${name}.ts`))).toBe(false);
+  });
+
+  it.each([
+    'orchestrator', 'rag_service', 'query_rewriter', 'context_filter', 'context_packer',
+    'retrieval_pipeline', 'retrieval_observability', 'self_correct', 'structured_output_service',
+    'cmd_parser', 'docx_service', 'feedback_service', 'feedback_analysis',
+    'ingestion_service', 'ingestion_worker', 'ingestion_job_repository',
+    'llm_config_service', 'openrouter_models', 'document_profile_service',
+    'template_service', 'template_compiler', 'template_generation_service',
+    'template_semantics', 'template_typography_rules', 'template_vision_service',
+    'template_service_client', 'template_storage_service', 'template_compilation_worker',
+  ])('service %s is deleted', (name) => {
+    expect(fs.existsSync(path.join(srcRoot, 'services', `${name}.ts`))).toBe(false);
+  });
+
+  it.each([
+    'abort', 'cloud_run_auth', 'document_access', 'embeddings_client',
+    'encryption', 'feedback_utils', 'sse_parser', 'urlGuard', 'sanitize',
+  ])('util %s is deleted', (name) => {
+    expect(fs.existsSync(path.join(srcRoot, 'utils', `${name}.ts`))).toBe(false);
+  });
+
+  it('index.ts mounts only auth and convert routes', () => {
+    const indexSrc = fs.readFileSync(path.join(srcRoot, 'index.ts'), 'utf-8');
+    expect(indexSrc).toContain("app.use('/api/auth', authRoutes)");
+    expect(indexSrc).toContain("app.use('/api/convert', convertRoutes)");
+    for (const dead of ['qaRoutes', 'ragRoutes', 'workflowRoutes', 'templateRoutes', 'feedbackRoutes', 'llmSettingsRoutes', 'documentsRoutes', 'documentProfileRoutes']) {
+      expect(indexSrc).not.toContain(dead);
+    }
+  });
+
+  it('readiness probes only the standalone stack', () => {
+    const readinessSrc = fs.readFileSync(path.join(srcRoot, 'services', 'readiness_service.ts'), 'utf-8');
+    expect(readinessSrc).not.toContain('DOCLING_URL');
+    expect(readinessSrc).not.toContain('EMBEDDINGS_URL');
+    expect(readinessSrc).not.toContain('DOCUMENT_RENDERER_URL');
+    expect(readinessSrc).toContain('conversionServiceHealthy');
+  });
+});
+
+describe('removed master-stack directories (standalone prune, ticket 08)', () => {
+  const repoRoot = path.resolve(__dirname, '../../..');
+
+  it.each([
+    'docling-service', 'embeddings-service', 'document-renderer',
+    'cloudflare-worker', 'infra', 'deploy', 'templates',
+  ])('directory %s is deleted', (dir) => {
+    expect(fs.existsSync(path.join(repoRoot, dir))).toBe(false);
+  });
+
+  it('add_header.py is deleted', () => {
+    expect(fs.existsSync(path.join(repoRoot, 'add_header.py'))).toBe(false);
+  });
+
+  it('the production deploy workflow is deleted', () => {
+    expect(fs.existsSync(path.join(repoRoot, '.github', 'workflows', 'deploy-production.yml'))).toBe(false);
+  });
+
+  it('CI keeps only the standalone product jobs', () => {
+    const ci = fs.readFileSync(path.join(repoRoot, '.github', 'workflows', 'ci.yml'), 'utf-8');
+    for (const job of ['backend', 'frontend', 'conversion', 'containers', 'repository-contracts']) {
+      expect(ci).toMatch(new RegExp(`^  ${job}:`, 'm'));
+    }
+    for (const dead of ['worker', 'renderer', 'python', 'terraform']) {
+      expect(ci).not.toMatch(new RegExp(`^  ${dead}:`, 'm'));
+    }
+    for (const dead of ['- service: docling', '- service: embeddings', '- service: renderer']) {
+      expect(ci).not.toContain(dead);
+    }
+  });
+});

@@ -3,17 +3,20 @@ import { getRouteLabel, NAV_ROUTES } from './routes';
 
 describe('shared route labels', () => {
   it.each([
-    ['/dashboard', 'Tổng quan'],
-    ['/generate', 'Tạo văn bản'],
-    ['/documents', 'Tài liệu'],
-    ['/documents/abc', 'Tài liệu'],
-    ['/templates/new', 'Mẫu văn bản'],
-    ['/qa/history', 'Tra cứu'],
+    ['/convert', 'Chuyển đổi PDF'],
+    ['/convert/anything', 'Chuyển đổi PDF'],
   ])('labels %s as %s', (path, label) => {
     expect(getRouteLabel(path)).toBe(label);
   });
 
-  it('does not include the retired settings route', () => {
-    expect(NAV_ROUTES.map((route) => route.href as string)).not.toContain('/settings');
+  it('navigates only to the convert surface', () => {
+    expect(NAV_ROUTES.map((route) => route.href as string)).toEqual(['/convert']);
+  });
+
+  it('does not include retired master-stack routes', () => {
+    const hrefs = NAV_ROUTES.map((route) => route.href as string);
+    for (const dead of ['/dashboard', '/generate', '/documents', '/templates', '/qa', '/settings']) {
+      expect(hrefs).not.toContain(dead);
+    }
   });
 });

@@ -2,8 +2,7 @@
 
 Lightweight Python (FastAPI) microservice that converts scanned/mixed/digital
 PDFs into faithful, well-structured DOCX files compliant with
-**Nghị định 30/2020/NĐ-CP**, for 10–50 users. Design source of truth:
-`CONVERSION_SERVICE_PLAN.md` (v6) in the repo root.
+**Nghị định 30/2020/NĐ-CP**, for 10–50 users.
 
 **Core principle:** the LLM *transcribes and classifies* — it never *writes*
 or *formats*. A validated JSON contract is the boundary between every stage.
@@ -79,8 +78,8 @@ python -m venv .venv
 ## Typography single source of truth
 
 `shared/decree30-typography.json` is canonical. The Python rule engine loads
-it at runtime; the TS generation side keeps its values in sync; the CI check
-`scripts/check_typography_sync.py` fails the build on drift.
+it at runtime; the CI check `scripts/check_typography_sync.py` fails the build
+on drift.
 
 ## Layout
 
@@ -111,12 +110,12 @@ conversion-service/
   stitcher, confidence, degradation) — exit criteria require real PDF
   corpora + Gemini key to certify.
 - **P3 — Backend & UI integration:** ✅ implemented — Redis
-  `conversion_queue` worker (`worker.py`, in-memory fallback when Redis is
-  down), Express endpoints (`POST /api/convert`, `GET /api/convert/:jobId`,
-  `GET /api/convert/:jobId/result`) with JWT auth + per-user quota forwarding,
-  Next.js `/convert` page with upload dialog, live progress polling, and
-  side-by-side PDF/DOCX preview; per-user daily quota + file TTL. Backend
-  contract tests 9/9, frontend 320/320, live HTTP E2E pass.
+  `conversion_queue` worker (`worker.py`, crash-safe BRPOPLPUSH consumption
+  with startup reclaim), Express endpoints (`POST /api/convert`,
+  `GET /api/convert/:jobId`, `GET /api/convert/:jobId/result`) with JWT auth
+  + owner scope + per-user quota forwarding, Next.js `/convert` page with
+  upload dialog, live progress polling, and download; per-user daily quota with
+  refund on failure + file TTL.
 - **P4 — Hardening:** ✅ implemented — Prometheus `/metrics` + failure-rate
   alert on `/health` (`metrics.py`), confidence-flag review endpoint
   `GET /convert/{jobId}/report` (flagged blocks < 0.6, low-confidence pages

@@ -23,23 +23,23 @@ describe('LandingPage', () => {
       'border-hairline',
     );
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-      'Văn bản hành chính, từ nguồn đến bản hoàn chỉnh',
+      'PDF sang Word, chuẩn Nghị định 30',
     );
   });
 
   it('offers one primary action and a borderless learning link', () => {
     render(<LandingPage />);
 
-    expect(screen.getByRole('link', { name: /Đăng nhập để soạn thảo/ })).toHaveAttribute('href', '/login');
+    expect(screen.getByRole('link', { name: /Đăng nhập để chuyển đổi/ })).toHaveAttribute('href', '/login');
     expect(screen.getByRole('link', { name: /Khám phá quy trình/ })).toHaveAttribute('href', '#workflow');
   });
 
-  it('describes the real DocAI workflow stages', () => {
+  it('describes the real conversion workflow stages', () => {
     render(<LandingPage />);
 
-    expect(screen.getByText('Nguồn tham chiếu')).toBeVisible();
-    expect(screen.getByText('Văn bản hoàn chỉnh')).toBeVisible();
-    expect(screen.getByText('Kiểm tra thể thức')).toBeVisible();
+    expect(screen.getByText('Tải lên & phân loại')).toBeVisible();
+    expect(screen.getByText('Chuyển đổi DOCX')).toBeVisible();
+    expect(screen.getByText('Kiểm tra độ tin cậy')).toBeVisible();
   });
 
   it('contains no legacy decorative style APIs', () => {

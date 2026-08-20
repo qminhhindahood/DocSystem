@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from './AuthProvider';
 
-const PROTECTED_PATHS = ['/dashboard', '/generate', '/documents', '/qa', '/templates', '/settings'];
+const PROTECTED_PATHS = ['/convert'];
 const AUTH_PATHS = ['/login', '/signup'];
 
 export function RequireSession({ children }: { children: React.ReactNode }) {
@@ -25,7 +25,7 @@ export function RequireSession({ children }: { children: React.ReactNode }) {
         const returnTo = encodeURIComponent(pathname);
         router.replace(`/login?returnTo=${returnTo}`);
       } else if (status === 'authenticated' && isAuth) {
-        router.replace('/dashboard');
+        router.replace('/convert');
       }
     }
   }, [status, pathname, router]);

@@ -20,10 +20,10 @@ export default function NotFound() {
             Về trang chủ
           </Link>
           <Link
-            href="/documents"
+            href="/convert"
             className="inline-flex min-h-11 items-center rounded-control border border-border-strong bg-surface px-5 text-control font-medium text-text-primary transition-colors duration-fast hover:bg-surface-strong"
           >
-            Tài liệu
+            Chuyển đổi PDF
           </Link>
         </div>
       </div>

@@ -5,16 +5,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { fastTimeout } from './middleware/timeout';
 import { errorHandler } from './middleware/errorHandler';
-import { generateLimiter, streamLimiter, searchLimiter, qaLimiter } from './middleware/ratelimit';
-import ragRoutes from './routes/rag';
-import workflowRoutes from './routes/workflow';
-import feedbackRoutes from './routes/feedback';
-import documentsRoutes from './routes/documents';
 import authRoutes from './routes/auth';
-import qaRoutes from './routes/qa';
-import llmSettingsRoutes from './routes/llm-settings';
-import templateRoutes from './routes/templates';
-import documentProfileRoutes from './routes/document-profile';
 import convertRoutes from './routes/convert';
 import { prisma, disconnectPrisma } from './utils/prisma';
 import { redisClient } from './utils/redis';
@@ -22,14 +13,6 @@ import { validateEnv } from './utils/validateEnv';
 import type { Server } from 'http';
 import { requestIdMiddleware } from './middleware/requestId';
 import { requestLoggingMiddleware } from './middleware/request_logging';
-import {
-  createDefaultIngestionWorker,
-  type IngestionWorker,
-} from './services/ingestion_worker';
-import {
-  createDefaultTemplateCompilationWorker,
-  type TemplateCompilationWorker,
-} from './services/template_compilation_worker';
 import { checkReadiness } from './services/readiness_service';
 import { createShutdownHandler } from './utils/graceful_shutdown';
 import { logger } from './utils/logger';
@@ -39,8 +22,6 @@ validateEnv();
 const app = express();
 export { app };
 const PORT = process.env.PORT || 3001;
-let ingestionWorker: IngestionWorker | null = null;
-let templateCompilationWorker: TemplateCompilationWorker | null = null;
 let httpServer: Server | null = null;
 
 function listenForReady(): Promise<Server> {
@@ -77,20 +58,14 @@ app.use('/api/', rateLimit({
 }));
 app.use((req, res, next) => {
   const longRunningPaths = new Set([
-    '/api/workflow/extract-fields', '/api/workflow/generate',
-    '/api/workflow/stream', '/api/qa/ask', '/api/convert',
+    '/api/convert',
   ]);
   if (longRunningPaths.has(req.path)) return next();
   return fastTimeout(req, res, next);
 });
 
 async function healthHandler(_req: express.Request, res: express.Response) {
-  const health = await checkReadiness({
-    workerStates: () => ({
-      ingestion: ingestionWorker?.state ?? 'stopped',
-      templates: templateCompilationWorker?.state ?? 'stopped',
-    }),
-  });
+  const health = await checkReadiness({});
   res.status(health.status === 'ok' ? 200 : 503).json(health);
 }
 
@@ -102,40 +77,24 @@ app.get('/live', (_req, res) => res.json({ status: 'alive' }));
 // API root
 app.get('/api', (req, res) => {
   res.json({
-    name: 'AI Document System API',
+    name: 'Conversion Service API',
     version: '1.0.0',
     endpoints: {
       health: '/health',
-      workflow: {
-        base: '/api/workflow',
-        generate: '/api/workflow/generate (POST)',
-        stream: '/api/workflow/stream (POST)',
-        validate: '/api/workflow/validate (POST)',
-        types: '/api/workflow/types (GET)',
-        template: '/api/workflow/template/:documentType (GET)',
+      auth: '/api/auth',
+      convert: {
+        base: '/api/convert',
+        submit: '/api/convert (POST)',
+        bulk: '/api/convert/bulk (POST)',
+        status: '/api/convert/:jobId (GET)',
+        report: '/api/convert/:jobId/report (GET)',
+        result: '/api/convert/:jobId/result (GET)',
       },
-      rag: '/api/rag',
-      feedback: '/api/feedback',
-      templates: '/api/templates',
     },
   });
 });
 
-// Rate limiting for expensive endpoints
-app.use('/api/workflow/generate', generateLimiter);
-app.use('/api/workflow/stream', streamLimiter);
-app.use('/api/rag/search', searchLimiter);
-app.use('/api/qa/ask', qaLimiter);
-
-app.use('/api/rag', ragRoutes);
-app.use('/api/workflow', workflowRoutes);
-app.use('/api/feedback', feedbackRoutes);
-app.use('/api/documents', documentsRoutes);
-app.use('/api/qa', qaRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api/settings/llm', llmSettingsRoutes);
-app.use('/api/templates', templateRoutes);
-app.use('/api/settings/document-profile', documentProfileRoutes);
 app.use('/api/convert', convertRoutes);
 
 app.use(errorHandler);
@@ -148,39 +107,8 @@ async function startServer() {
     logger.warn({ error }, 'Redis initialization failed; continuing in degraded mode');
   }
 
-  // Check pgvector extension
-  try {
-    const result = await prisma.$queryRaw<{ extname: string }[]>`SELECT extname FROM pg_extension WHERE extname = 'vector'`;
-    if (result.length === 0) logger.warn('pgvector extension is unavailable; vector search is disabled');
-    else logger.info('pgvector extension is available');
-  } catch (error) {
-    logger.warn({ error }, 'Unable to verify pgvector extension');
-  }
-
-  // Ensure HNSW index exists (idempotent, non-fatal)
-  try {
-    await prisma.$executeRawUnsafe('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_chunks_embedding_hnsw ON "Chunk" USING hnsw (embedding vector_cosine_ops)');
-    logger.info('HNSW index verified');
-  } catch (error: any) {
-    if (error.message?.includes('already exists')) logger.info('HNSW index already exists');
-    else logger.warn({ error }, 'Unable to verify HNSW index');
-  }
-
-  // Ensure composite index on Chunk(documentId, level) for RAG query performance
-  try {
-    await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "Chunk_documentId_level_idx" ON "Chunk"("documentId", "level")');
-    logger.info('Chunk composite index verified');
-  } catch (error: any) {
-    logger.warn({ error }, 'Unable to verify chunk composite index');
-  }
-
   httpServer = await listenForReady();
   logger.info({ port: Number(PORT) }, 'Backend server is listening');
-
-  ingestionWorker = createDefaultIngestionWorker();
-  ingestionWorker.start();
-  templateCompilationWorker = createDefaultTemplateCompilationWorker();
-  templateCompilationWorker.start();
 }
 
 if (process.env.NODE_ENV !== 'test') {
@@ -193,12 +121,7 @@ if (process.env.NODE_ENV !== 'test') {
 const shutdownGraceMs = Number(process.env.SHUTDOWN_GRACE_MS || 30_000);
 export const shutdown = createShutdownHandler({
   getServer: () => httpServer,
-  stopWorkers: async () => {
-    await Promise.all([
-      ingestionWorker?.stop(shutdownGraceMs),
-      templateCompilationWorker?.stop(shutdownGraceMs),
-    ]);
-  },
+  stopWorkers: async () => {},
   closeRedis: () => redisClient.close(),
   disconnectPrisma,
   graceMs: shutdownGraceMs,

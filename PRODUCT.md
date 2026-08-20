@@ -6,28 +6,48 @@ product
 
 ## Users
 
-Vietnamese professionals who need a private workspace for asking questions about their own documents and generating standards-conscious administrative DOCX files from templates. They work with local or user-configured language models and need generated files to remain downloadable even when automated visual comparison can only provide a warning.
+Vietnamese professionals who hold administrative PDFs (decisions, official
+letters, reports, notices) and need them re-emitted as DOCX files that comply
+with Decree 30/2020/NĐ-CP typography — without reformatting by hand and without
+handing the document to a general-purpose chatbot.
 
 ## Product Purpose
 
-DocAI combines private document retrieval with template-based document generation. Success means users can upload references and DOCX templates, generate owner-scoped documents with reliable structural placement, understand fidelity limitations clearly, and retrieve the resulting files without hidden administrative workflows.
+One job, done honestly: upload a PDF, receive a Decree-30-compliant DOCX.
+Success means the conversion preserves the source content faithfully, applies
+the official typography by rule (never by an LLM's judgment), reports its own
+confidence and coverage so the user knows what to spot-check, refunds quota
+when the infrastructure fails, and keeps every job visible only to its owner.
 
 ## Brand Personality
 
-Precise, calm, trustworthy. The interface should communicate technical status honestly while keeping the document task—not infrastructure—at the center.
+Precise, calm, trustworthy. The interface communicates conversion status
+honestly — queued, processing, completed, completed with warnings, failed —
+and keeps the document task, not infrastructure, at the center.
 
 ## Anti-references
 
-Avoid generic administrator dashboards, role-heavy review consoles, decorative AI theatrics, and claims that arbitrary DOCX output is guaranteed to be Microsoft Word-identical. Do not turn warnings into blocking error experiences when a structurally valid document exists.
+- No document generation, no chat QA, no RAG, no template management, no
+  dashboards, no admin consoles — those master-stack surfaces are deleted and
+  their absence is contract-tested.
+- No decorative AI theatrics; the LLM never decides formatting values.
+- No claims that output is Microsoft-Word-identical; confidence and coverage
+  are shown instead, and warnings never hide a structurally valid file.
+- No silent drops: a scanned page that cannot be converted is reported as
+  degraded, never skipped quietly.
 
 ## Design Principles
 
-- Keep the user’s document and next action primary.
-- Explain technical confidence and limitations in plain Vietnamese.
-- Preserve user control: warnings inform, while verified files remain available.
-- Use familiar, consistent product affordances across generation, templates, documents, and settings.
-- Treat privacy and owner scope as visible product behavior, not hidden implementation detail.
+- Keep the user's PDF and the next action primary.
+- Explain confidence, coverage, and degraded pages in plain Vietnamese.
+- Preserve user control: warnings inform; the converted file stays downloadable.
+- Treat privacy and owner scope as visible product behavior — a job id is
+  never enough to read someone else's document.
+- Failures cost nothing: invalid uploads and failed conversions never consume
+  the daily quota.
 
 ## Accessibility & Inclusion
 
-Target WCAG 2.1 AA. Status must never rely on color alone; keyboard focus, semantic announcements, readable contrast, reduced motion, and clear Vietnamese labels are required.
+Target WCAG 2.1 AA. Status must never rely on color alone; keyboard focus,
+semantic announcements, readable contrast, reduced motion, and clear Vietnamese
+labels are required.

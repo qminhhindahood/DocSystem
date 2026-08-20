@@ -42,7 +42,7 @@ app = FastAPI(title="Conversion Service", version=config.SERVICE_VERSION)
 
 # Job state: Redis-backed when reachable, in-memory otherwise.
 STORE = JobStore()
-QUOTA = QuotaService(redis_client=STORE._redis)
+QUOTA = QuotaService(redis_client=STORE.redis_client)
 
 # In-process fallback registry (dev mode only)
 _LOCAL_JOBS: dict[str, dict[str, Any]] = {}
@@ -137,13 +137,14 @@ async def metrics() -> str:
     redis_worker = {}
     if STORE.using_redis:
         try:
-            queue_depth = STORE._redis.llen(config.CONVERSION_QUEUE_KEY)
+            redis_client = STORE.redis_client
+            queue_depth = redis_client.llen(config.CONVERSION_QUEUE_KEY)
             # Aggregate worker-recorded counters (separate process writes to
             # Redis so the API can surface them on a single scrape endpoint).
-            for key in STORE._redis.keys(METRICS.REDIS_METRICS_PREFIX + "*"):
+            for key in redis_client.keys(METRICS.REDIS_METRICS_PREFIX + "*"):
                 name = key[len(METRICS.REDIS_METRICS_PREFIX):]
                 try:
-                    redis_worker[name] = float(STORE._redis.get(key) or 0)
+                    redis_worker[name] = float(redis_client.get(key) or 0)
                 except (TypeError, ValueError):
                     continue
         except Exception:  # noqa: BLE001
@@ -228,6 +229,8 @@ async def convert_status(job_id: str) -> dict[str, Any]:
         "confidence": job.get("confidence"),
         "degradedPages": job.get("degradedPages", []),
         "error": job.get("error"),
+        # Owning user — the backend owner-scopes reads against it (ticket 03).
+        "userId": job.get("userId"),
     }
 
 
@@ -265,6 +268,7 @@ async def convert_report(job_id: str) -> dict[str, Any]:
         "status": job.get("status"),
         "confidence": job.get("confidence"),
         "degradedPages": job.get("degradedPages", []),
+        "userId": job.get("userId"),
         "flaggedBlocks": report.get("flagged_blocks", []),
         "lowConfidencePages": report.get("low_confidence_pages", []),
         "demotions": report.get("demotions", 0),

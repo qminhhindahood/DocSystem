@@ -8,7 +8,6 @@ yarn.lock
 pnpm-lock.yaml
 !backend/package-lock.json
 !frontend/package-lock.json
-!cloudflare-worker/package-lock.json
 
 # Build outputs
 dist/
@@ -47,23 +46,12 @@ logs/
 
 # Uploads and outputs
 uploads/
-lora-outputs/
-postgres_data/
-redis_data/
-template_storage/
-/templates/
-/fonts/
-/licenses/
-/backend/uploads/templates/
-fonts/
-licenses/
 
 # TypeScript
 *.tsbuildinfo
 
 # Runtime secrets
 .runtime_env.txt
-docs/openrouter.py
 
 # Backups
 backups/
@@ -76,31 +64,9 @@ coverage/
 .nyc_output/
 
 # Generated/reference artifacts kept outside source control
-/docs/generated-templates/
-/docs/rag-results/
-/docs/templates-gemini/
-/docs/antigravity-design/
-/docs/files/*.pdf
-/docs/files/*.docx
-/docs/quyet-dinh/*.pdf
 /frontend/.artifacts/
 /.artifacts/
 
 # Python cache
 __pycache__/
 *.pyc
-
-# Production secrets (deploy runbook)
-deploy/.env.prod
-deploy/nginx/acme/
-deploy/nginx/certs/
-deploy/nginx/letsencrypt/
-
-# Terraform local state, plans, and production inputs
-infra/terraform/.terraform/
-infra/terraform/*.tfstate
-infra/terraform/*.tfstate.*
-infra/terraform/tfplan
-infra/terraform/*.tfplan
-infra/terraform/prod.tfvars
-infra/terraform/crash.log

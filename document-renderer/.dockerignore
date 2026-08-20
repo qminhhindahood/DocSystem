@@ -1,7 +1,0 @@
-**/bin
-**/obj
-tests
-.git
-.pytest_cache
-__pycache__
-README.md

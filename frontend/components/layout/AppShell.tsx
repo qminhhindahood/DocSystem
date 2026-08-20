@@ -4,7 +4,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { ToastProvider } from '@/components/ui/toast';
-import { PageTracker } from '@/components/analytics/PageTracker';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -64,7 +63,6 @@ export function AppShell({ children }: AppShellProps) {
           >
             <main id="main-content" className="relative flex-1 overflow-y-auto">
               {children}
-              <PageTracker />
             </main>
           </div>
         </div>

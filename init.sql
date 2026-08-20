@@ -1,1 +1,3 @@
-CREATE EXTENSION IF NOT EXISTS vector;
+-- Standalone conversion product: plain Postgres, no extensions (ADR-0001).
+-- The pgvector extension belonged to the master stack's RAG surface and is
+-- intentionally absent here.

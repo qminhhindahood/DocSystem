@@ -111,6 +111,7 @@ describe('convert API contract', () => {
     mockGetConversionStatus.mockResolvedValue({
       jobId: 'job-1', status: 'completed', progress: 1.0,
       resultUrl: '/convert/job-1/result', confidence: 0.9, degradedPages: [],
+      userId: 'user-a',
     });
     await withHttpServer(app, async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/convert/job-1`, {
@@ -136,6 +137,9 @@ describe('convert API contract', () => {
   });
 
   it('proxies the confidence review report', async () => {
+    mockGetConversionStatus.mockResolvedValue({
+      jobId: 'job-1', status: 'completed_with_warnings', progress: 1.0, userId: 'user-a',
+    });
     mockGetConversionReport.mockResolvedValue({
       jobId: 'job-1', status: 'completed_with_warnings', confidence: 0.72,
       degradedPages: [3],
@@ -192,6 +196,9 @@ describe('convert API contract', () => {
   });
 
   it('streams the DOCX result', async () => {
+    mockGetConversionStatus.mockResolvedValue({
+      jobId: 'job-1', status: 'completed', progress: 1.0, userId: 'user-a',
+    });
     mockGetConversionResult.mockResolvedValue(Buffer.from('PK-docx-bytes'));
     await withHttpServer(app, async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/convert/job-1/result`, {
@@ -201,6 +208,76 @@ describe('convert API contract', () => {
       expect(response.headers.get('content-type')).toContain('wordprocessingml');
       const text = await response.text();
       expect(text).toBe('PK-docx-bytes');
+    });
+  });
+
+  describe('owner-scoped job reads (ticket 03)', () => {
+    it('lets the owner read job status', async () => {
+      mockGetConversionStatus.mockResolvedValue({
+        jobId: 'job-1', status: 'completed', progress: 1.0,
+        resultUrl: '/convert/job-1/result', confidence: 0.9, degradedPages: [],
+        userId: 'user-a',
+      });
+      await withHttpServer(app, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/convert/job-1`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(body.status).toBe('completed');
+        // The owner field is internal; it is not echoed to clients.
+        expect(body.userId).toBeUndefined();
+      });
+    });
+
+    it('returns 404 when another user owns the job (status)', async () => {
+      mockGetConversionStatus.mockResolvedValue({
+        jobId: 'job-1', status: 'completed', progress: 1.0, userId: 'user-b',
+      });
+      await withHttpServer(app, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/convert/job-1`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(response.status).toBe(404);
+      });
+    });
+
+    it('returns 404 when the job has no owner recorded', async () => {
+      mockGetConversionStatus.mockResolvedValue({
+        jobId: 'job-1', status: 'completed', progress: 1.0,
+      });
+      await withHttpServer(app, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/convert/job-1`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(response.status).toBe(404);
+      });
+    });
+
+    it('returns 404 when another user owns the job (report)', async () => {
+      mockGetConversionStatus.mockResolvedValue({
+        jobId: 'job-1', status: 'completed', progress: 1.0, userId: 'user-b',
+      });
+      await withHttpServer(app, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/convert/job-1/report`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(response.status).toBe(404);
+        expect(mockGetConversionReport).not.toHaveBeenCalled();
+      });
+    });
+
+    it('checks ownership before streaming the result', async () => {
+      mockGetConversionStatus.mockResolvedValue({
+        jobId: 'job-1', status: 'completed', progress: 1.0, userId: 'user-b',
+      });
+      await withHttpServer(app, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/convert/job-1/result`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(response.status).toBe(404);
+        expect(mockGetConversionResult).not.toHaveBeenCalled();
+      });
     });
   });
 });

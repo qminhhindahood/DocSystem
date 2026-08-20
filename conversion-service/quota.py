@@ -46,3 +46,21 @@ class QuotaService:
         if count > self.limit:
             return False, 0
         return True, self.limit - count
+
+    def refund(self, user_id: str) -> None:
+        """Give one conversion slot back (failed conversion). Never below zero."""
+        key = self._key(user_id)
+        if self._redis is not None:
+            try:
+                count = self._redis.decr(key)
+                if count < 0:
+                    self._redis.set(key, 0, ex=24 * 3600)
+                return
+            except Exception:  # noqa: BLE001
+                self._redis = None
+        # in-memory fallback
+        now = time.time()
+        count, expires = self._memory.get(key, (0, now + 86400))
+        if now > expires:
+            return
+        self._memory[key] = (max(0, count - 1), expires)

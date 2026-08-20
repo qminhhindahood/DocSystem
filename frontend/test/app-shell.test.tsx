@@ -56,10 +56,6 @@ vi.mock("@/lib/theme", () => ({
   useTheme: () => ({ theme: "light", toggle: vi.fn() }),
 }));
 
-vi.mock("@/components/settings/LLMSettingsDialog", () => ({
-  LLMSettingsDialog: () => <button>Cài đặt LLM</button>,
-}));
-
 const logout = vi.fn();
 vi.mock("@/components/auth/AuthProvider", () => ({
   useAuth: () => ({ status: 'authenticated', user: null, logout, refresh: vi.fn() }),
@@ -75,17 +71,17 @@ describe("AppShell", () => {
     expect(screen.getByText("Hello World")).toBeDefined();
   });
 
-  it("renders sidebar with localized navigation links", () => {
+  it("renders sidebar with the convert-only navigation link", () => {
     render(
       <AppShell>
         <p>test</p>
       </AppShell>,
     );
-    expect(screen.getByRole("link", { name: /Tạo văn bản/ })).toBeDefined();
-    expect(screen.getByRole("link", { name: /Tài liệu/ })).toBeDefined();
-    expect(screen.getByRole("link", { name: /Mẫu văn bản/ })).toBeDefined();
-    expect(screen.getByRole("link", { name: /Tra cứu/ })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Cài đặt LLM' })).toBeDefined();
+    const sidebar = screen.getByTestId('app-sidebar');
+    expect(within(sidebar).getByRole("link", { name: /Chuyển đổi PDF/ })).toBeDefined();
+    for (const dead of [/Tạo văn bản/, /Tài liệu/, /Mẫu văn bản/, /Tra cứu/, /Tổng quan/]) {
+      expect(within(sidebar).queryByRole("link", { name: dead })).toBeNull();
+    }
   });
 
   it("uses a 256px desktop sidebar and one rounded workspace", () => {
@@ -178,7 +174,7 @@ describe("AppShell", () => {
 
     rerender(<NotFound />);
     expect(screen.getByRole('link', { name: 'Về trang chủ' })).toHaveAttribute('href', '/');
-    expect(screen.getByRole('link', { name: 'Tài liệu' })).toHaveAttribute('href', '/documents');
+    expect(screen.getByRole('link', { name: 'Chuyển đổi PDF' })).toHaveAttribute('href', '/convert');
   });
 
   it("hides decorative skeleton bars from assistive technology while loading", () => {
@@ -194,7 +190,7 @@ describe("AppShell", () => {
     const sidebar = screen.getByTestId('app-sidebar');
     expect(sidebar).toHaveClass('invisible');
     expect(sidebar).toHaveClass('lg:visible');
-    expect(screen.getByRole('link', { name: /Tạo văn bản/ })).toHaveClass('min-h-11');
+    expect(within(sidebar).getByRole('link', { name: /Chuyển đổi PDF/ })).toHaveClass('min-h-11');
     expect(screen.getByLabelText('Đóng điều hướng')).toHaveClass('h-11', 'w-11');
   });
 

@@ -59,51 +59,11 @@ export function rateLimiter(config: RateLimitConfig) {
   };
 }
 
-export const generateLimiter = rateLimiter({
-  windowMs: 60_000,
-  maxRequests: 10,
-  keyGenerator: (req) => `generate:${DEFAULT_KEY(req)}`,
-});
-
-export const streamLimiter = rateLimiter({
-  windowMs: 60_000,
-  maxRequests: 5,
-  keyGenerator: (req) => `stream:${DEFAULT_KEY(req)}`,
-});
-
-// QA streams can hold an HTTP connection for several minutes; keep a
-// dedicated, tighter budget instead of relying on the broad /api limiter.
-export const qaLimiter = rateLimiter({
-  windowMs: 60_000,
-  maxRequests: 5,
-  keyGenerator: (req) => `qa:${DEFAULT_KEY(req)}`,
-});
-
-export const searchLimiter = rateLimiter({
-  windowMs: 60_000,
-  maxRequests: 30,
-  keyGenerator: (req) => `search:${DEFAULT_KEY(req)}`,
-});
-
-// H11: dedicated per-user limiters for upload/index and feedback submission.
-// Each limiter prefixes its key so separate budgets do not collide on one
-// Redis counter (e.g. uploads exhausting the feedback budget and vice versa).
+// H11: dedicated per-user limiter for conversion uploads.
 export const uploadLimiter = rateLimiter({
   windowMs: 15 * 60_000,
   maxRequests: 20,
   keyGenerator: (req) => `upload:${USER_KEY(req)}`,
-});
-
-export const templateUploadLimiter = rateLimiter({
-  windowMs: 15 * 60_000,
-  maxRequests: 10,
-  keyGenerator: (req) => `template-upload:${USER_KEY(req)}`,
-});
-
-export const feedbackSubmitLimiter = rateLimiter({
-  windowMs: 15 * 60_000,
-  maxRequests: 30,
-  keyGenerator: (req) => `feedback:${USER_KEY(req)}`,
 });
 
 export const forgotPasswordLimiter = rateLimiter({

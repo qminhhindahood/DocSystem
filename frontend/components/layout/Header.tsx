@@ -41,7 +41,7 @@ export function Header({ onMenuClick, className, sidebarOpen, menuButtonRef }: H
         <Menu className="h-5 w-5" />
       </button>
 
-      <Link href="/dashboard" className="flex min-h-11 min-w-0 items-center gap-2">
+      <Link href="/convert" className="flex min-h-11 min-w-0 items-center gap-2">
         <span className="text-control font-semibold text-text-primary">DocAI</span>
         <span aria-hidden="true" className="text-text-muted">
           /

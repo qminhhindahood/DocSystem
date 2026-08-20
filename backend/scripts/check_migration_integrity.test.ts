@@ -1,178 +1,64 @@
-import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const SYSTEM_OWNER_ID = '00000000-0000-0000-0000-000000000001';
-const migrationsRoot = 'backend/prisma/migrations';
-const schemaSupportingMigrations = [
-  '20260709000000_add_summary_chunks',
-  '20260711000000_rename_ollama_to_lmstudio_after_init',
-  '20260712000000_add_document_ownership',
-  '20260712010000_add_rag_reliability_metadata',
-];
-const templateMigration = '20260712184012_init_dynamic_templates';
-const templateRepairMigration = '20260718090000_repair_dynamic_template_schema';
-const templateLegacyConstraintRepairMigration = '20260718100000_release_legacy_template_insert_constraints';
-const ingestionJobsMigration = '20260720000000_add_ingestion_jobs';
-const documentProfileExpansionMigration = '20260727000000_expand_document_profiles';
-const passwordRecoveryMigration = '20260809000000_add_password_recovery';
-const preInitRenameMigration = '20250608000000_rename_ollama_to_lmstudio';
-const initMigration = '20260513195302_init';
-const publishedMigrationSha256 = {
-  'backend/prisma/migrations/20250608000000_rename_ollama_to_lmstudio/migration.sql':
-    'ffcb5ada5eb9a31fc1df5a7339d6e00fd648b56fde0fdabe96c0216005e4434e',
-  'backend/prisma/migrations/20260513195302_init/migration.sql':
-    '0b9458dfd1ee2783e0e1f083e420e2a15f67a13d17568aca7be4b42d4d91b476',
-} as const;
-const sha = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
-const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
-const migrationSql = (migration: string) => readFileSync(
-  join(repoRoot, migrationsRoot, migration, 'migration.sql'),
-  'utf8',
-);
+const backendRoot = join(__dirname, '..');
+const repoRoot = join(backendRoot, '..');
+const migrationsRoot = join(backendRoot, 'prisma', 'migrations');
 
-test.each(Object.entries(publishedMigrationSha256))(
-  '%s is byte-identical to the published migration',
-  (file, expectedSha256) => {
-    expect(sha(readFileSync(join(repoRoot, file)))).toBe(expectedSha256);
-  },
-);
+const read = (...segments: string[]) => readFileSync(join(...segments), 'utf8');
 
-test.each(schemaSupportingMigrations)('%s is present in tracked migration history', (migration) => {
-  const path = `${migrationsRoot}/${migration}/migration.sql`;
-  expect(() => execFileSync('git', ['ls-files', '--error-unmatch', path], {
-    cwd: repoRoot,
-    stdio: 'pipe',
-  })).not.toThrow();
-});
+describe('squashed auth-only migration baseline (ADR-0001)', () => {
+  it('contains exactly one migration creating only User and PasswordResetToken', () => {
+    const migrations = readdirSync(migrationsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
 
-test('schema-supporting migrations precede the template migration in chronological order', () => {
-  const migrations = readdirSync(join(repoRoot, migrationsRoot)).sort();
-  const expectedOrder = [...schemaSupportingMigrations, templateMigration];
-  const actualOrder = migrations.filter((migration) => expectedOrder.includes(migration));
+    expect(migrations).toEqual(['20260901000000_init_standalone_auth']);
 
-  expect(actualOrder).toEqual(expectedOrder);
-});
+    const sql = read(migrationsRoot, migrations[0], 'migration.sql');
+    const tables = [...sql.matchAll(/CREATE TABLE "(\w+)"/g)].map((m) => m[1]).sort();
+    expect(tables).toEqual(['PasswordResetToken', 'User']);
 
-test('the immutable pre-init rename is baselined only after a fail-closed empty-target check', () => {
-  expect(preInitRenameMigration < initMigration).toBe(true);
+    for (const dead of ['Document', 'Chunk', 'Feedback', 'Template', 'IngestionJob', 'TrainingJob', 'ModelVersion', 'UserLLMConfig', 'UserDocumentProfile']) {
+      expect(sql).not.toContain(`"${dead}"`);
+    }
+    expect(sql).not.toMatch(/vector/i);
+  });
 
-  const helper = readFileSync(
-    join(repoRoot, 'backend/scripts/deploy_fresh_database.ts'),
-    'utf8',
-  );
-  const runtimePreparation = readFileSync(
-    join(repoRoot, 'backend/src/scripts/prepare_database.ts'),
-    'utf8',
-  );
-  const packageJson = JSON.parse(
-    readFileSync(join(repoRoot, 'backend/package.json'), 'utf8'),
-  ) as { scripts?: Record<string, string> };
+  it('schema.prisma defines only the two auth models and no pgvector extension', () => {
+    const schema = read(backendRoot, 'prisma', 'schema.prisma');
+    const models = [...schema.matchAll(/^model\s+(\w+)\s+{/gm)].map((m) => m[1]).sort();
 
-  expect(helper).toContain(
-    "export const BASELINE_MIGRATION = '20250608000000_rename_ollama_to_lmstudio';",
-  );
-  expect(helper).toMatch(
-    /\['prisma', 'migrate', 'resolve', '--applied', BASELINE_MIGRATION\]/,
-  );
-  expect(helper).toContain('await deps.prepareDatabase(databaseUrl);');
-  expect(helper).toMatch(/applicationTables\.length !== 0/);
-  expect(helper).toMatch(/appliedMigrations\.length !== 0/);
-  expect(helper).toMatch(/publicSchemaExists !== true/);
-  expect(runtimePreparation).toContain(`export const BASELINE_MIGRATION = '${preInitRenameMigration}';`);
-  expect(runtimePreparation).toContain('SELECT NOT (');
-  expect(runtimePreparation).toContain('pg_catalog.pg_depend');
-  expect(runtimePreparation).toMatch(/\['migrate', 'resolve', '--applied', BASELINE_MIGRATION\]/);
-  expect(packageJson.scripts?.['prisma:deploy:fresh']).toBe(
-    'tsx scripts/deploy_fresh_database.ts',
-  );
-});
+    expect(models).toEqual(['PasswordResetToken', 'User']);
+    expect(schema).not.toContain('extensions');
+    expect(schema).not.toContain('vector');
+    expect(schema).not.toContain('postgresqlExtensions');
+  });
 
-test('document ownership establishes isDisabled, the exact owner default, and the foreign key', () => {
-  const sql = migrationSql('20260712000000_add_document_ownership');
+  it('compose uses plain postgres:15-alpine and init.sql creates no extensions', () => {
+    const compose = read(repoRoot, 'docker-compose.yml');
+    const initSql = read(repoRoot, 'init.sql');
 
-  expect(sql).toContain(
-    'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isDisabled" BOOLEAN NOT NULL DEFAULT false;',
-  );
-  expect(sql).toContain(`VALUES ('${SYSTEM_OWNER_ID}', 'system-owner'`);
-  expect(sql).toContain('ON CONFLICT ("id") DO UPDATE SET "isDisabled" = true;');
-  expect(sql).toContain(
-    `ALTER TABLE "Document" ALTER COLUMN "ownerId" SET DEFAULT '${SYSTEM_OWNER_ID}';`,
-  );
-  expect(sql).toContain(
-    'FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE',
-  );
-  expect('20260712000000_add_document_ownership' < templateMigration).toBe(true);
-});
+    expect(compose).toContain('image: postgres:15-alpine');
+    expect(compose).not.toContain('pgvector');
+    expect(initSql).not.toMatch(/CREATE EXTENSION/i);
+  });
 
-test('template adoption is additive and preserves the exact system-owner default', () => {
-  const sql = migrationSql(templateMigration);
-  expect(sql).not.toMatch(/DROP COLUMN\s+"(?:header|signatureBlock)"/i);
-  expect(sql).not.toMatch(/ALTER COLUMN\s+"ownerId"\s+DROP DEFAULT/i);
-  expect(sql).toContain('DROP INDEX IF EXISTS "Template_docType_key"');
-  expect(sql).toContain('ALTER COLUMN "ownerId" SET NOT NULL');
-  expect(sql).toContain(`ALTER COLUMN "ownerId" SET DEFAULT '${SYSTEM_OWNER_ID}'`);
-  expect(sql).toContain('ALTER COLUMN "status" SET DEFAULT \'REJECTED\'');
-});
+  it('the compose migrate service applies the single migration without pgvector bootstrapping', () => {
+    const compose = read(repoRoot, 'docker-compose.yml');
 
-test('dynamic template repair is additive and backfills ownership', () => {
-  const sql = migrationSql(templateRepairMigration);
-  expect(sql).toContain('ADD COLUMN IF NOT EXISTS "header" TEXT NOT NULL DEFAULT \'\'');
-  expect(sql).toContain('ADD COLUMN IF NOT EXISTS "signatureBlock" TEXT NOT NULL DEFAULT \'\'');
-  expect(sql).toContain('ADD COLUMN IF NOT EXISTS "status" "TemplateStatus"');
-  expect(sql).toContain(`SET "ownerId" = '${SYSTEM_OWNER_ID}'`);
-  expect(sql).toContain('ALTER COLUMN "docType" DROP NOT NULL');
-  expect(sql).toContain('CREATE TABLE IF NOT EXISTS "UserDocumentProfile"');
-  expect(sql).not.toMatch(/DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM\s+"Template"/i);
-});
+    expect(compose).toContain('prisma migrate deploy');
+    expect(compose).not.toContain('prepare_database');
+    expect(compose).not.toContain('CREATE EXTENSION');
+  });
 
-test('legacy template columns remain preserved without blocking dynamic inserts', () => {
-  const sql = migrationSql(templateLegacyConstraintRepairMigration);
+  it('the backend carries no pgvector/HNSW wiring', () => {
+    const packageJson = JSON.parse(read(backendRoot, 'package.json')) as {
+      dependencies?: Record<string, string>;
+    };
 
-  expect(sql).toContain('ALTER COLUMN "filePath" DROP NOT NULL');
-  expect(sql).toContain('ALTER COLUMN "schema" DROP NOT NULL');
-  expect(sql).not.toMatch(/DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM\s+"Template"/i);
-});
-
-test('ingestion jobs add a durable leased queue without destructive schema changes', () => {
-  const sql = migrationSql(ingestionJobsMigration);
-
-  expect(sql).toContain('CREATE TABLE "IngestionJob"');
-  expect(sql).toContain('CONSTRAINT "IngestionJob_documentId_key" UNIQUE ("documentId")');
-  expect(sql).toContain(
-    'FOREIGN KEY ("documentId") REFERENCES "Document"("id") ON DELETE CASCADE ON UPDATE CASCADE',
-  );
-  expect(sql).toContain('CREATE INDEX "IngestionJob_status_availableAt_idx"');
-  expect(sql).toContain('CREATE INDEX "IngestionJob_leaseExpiresAt_idx"');
-  expect(sql).not.toMatch(/DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM/i);
-});
-
-test('document profile expansion is additive and covers organization contact fields', () => {
-  const sql = migrationSql(documentProfileExpansionMigration);
-  for (const column of [
-    'supervisingAgency', 'agencyAddress', 'agencyEmail', 'agencyWebsite', 'agencyPhone',
-  ]) {
-    expect(sql).toContain(`ADD COLUMN IF NOT EXISTS "${column}" TEXT`);
-  }
-  expect(sql).not.toMatch(/DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM/i);
-});
-
-test('password recovery is additive, revokes sessions, and stores only token hashes', () => {
-  const sql = migrationSql(passwordRecoveryMigration);
-  const schema = readFileSync(join(repoRoot, 'backend/prisma/schema.prisma'), 'utf8');
-
-  expect(schema).toMatch(/^\s*email\s+String\?\s+@unique\s*$/m);
-  expect(schema).toMatch(/^\s*sessionVersion\s+Int\s+@default\(0\)\s*$/m);
-  expect(schema).toMatch(/^\s*resetTokens\s+PasswordResetToken\[\]\s*$/m);
-  expect(schema).toMatch(/^\s*tokenHash\s+String\s+@unique\s*$/m);
-  expect(schema).toMatch(/^\s*usedAt\s+DateTime\?\s*$/m);
-  expect(schema).toContain('@@index([userId, createdAt])');
-  expect(schema).toContain('@@index([expiresAt])');
-  expect(sql).toContain('ADD COLUMN IF NOT EXISTS "email" TEXT');
-  expect(sql).toContain('ADD COLUMN IF NOT EXISTS "sessionVersion" INTEGER NOT NULL DEFAULT 0');
-  expect(sql).toContain('CREATE TABLE IF NOT EXISTS "PasswordResetToken"');
-  expect(sql).toContain('UNIQUE ("tokenHash")');
-  expect(sql).toContain('ON DELETE CASCADE ON UPDATE CASCADE');
-  expect(sql).not.toMatch(/DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM/i);
+    expect(packageJson.dependencies).not.toHaveProperty('pgvector');
+    expect(packageJson.dependencies).not.toHaveProperty('pg');
+  });
 });

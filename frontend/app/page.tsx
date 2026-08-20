@@ -6,7 +6,7 @@ import {
   ChevronRight,
   FileCheck2,
   FileSearch,
-  FileText,
+  FileOutput,
   ArrowRight,
   Plus,
   Minus,
@@ -19,46 +19,46 @@ import { Button } from '@/components/ui/button';
 
 const ACCORDION_ITEMS = [
   {
-    title: 'Tải lên & trích xuất',
-    desc: 'Tải lên PDF, DOCX hoặc văn bản tham chiếu. Hệ thống trích xuất cấu trúc Điều / Khoản / Điểm và lưu trữ để tìm kiếm ngữ nghĩa.',
+    title: 'Tải lên PDF',
+    desc: 'Tải lên tệp PDF scan hoặc bản số. Hệ thống nhận diện từng trang và phân loại trang văn bản, trang bảng biểu, trang ảnh.',
   },
   {
-    title: 'Tạo dự thảo',
-    desc: 'Từ yêu cầu nghiệp vụ, hệ thống tạo dự thảo hai giai đoạn — trước Outline, sau Nội dung — để từng Điều đều có căn cứ pháp lý rõ ràng.',
+    title: 'Chuyển đổi sang Word',
+    desc: 'Nội dung được chuyển thành văn bản Word (.docx) giữ cấu trúc đoạn, bảng và thứ tự trang của bản gốc.',
   },
   {
-    title: 'Tuân thủ thể thức',
-    desc: 'Quốc hiệu, tiêu ngữ, căn cứ pháp lý và bố cục điều khoản được kiểm tra tự động; kết quả kiểm tra hiển thị trước khi bạn xuất tài liệu.',
+    title: 'Chuẩn thể thức Nghị định 30',
+    desc: 'Phông chữ, cỡ chữ và bố cục được áp theo Nghị định 30/2020/NĐ-CP để văn bản dùng được ngay cho công việc hành chính.',
   },
   {
-    title: 'Mẫu DOCX',
-    desc: 'Tải lên mẫu DOCX của cơ quan. Hệ thống nhận diện vùng dữ liệu và áp dụng khi xuất, giữ đúng kiểu đoạn và vùng ký.',
+    title: 'Độ tin cậy rõ ràng',
+    desc: 'Mỗi trang được chấm điểm độ tin cậy. Trang nhận diện kém được đánh dấu để bạn kiểm tra lại, không bao giờ im lặng bỏ qua.',
   },
   {
-    title: 'Xuất văn bản',
-    desc: 'Xuất tệp DOCX hoàn chỉnh sau khi xác nhận, kèm trạng thái kiểm tra bố cục đã biết.',
+    title: 'Tải xuống DOCX',
+    desc: 'Kết quả là tệp DOCX hoàn chỉnh, tải về và chỉnh sửa tiếp trong Word.',
   },
 ];
 
-// The three workflow stages the product actually implements.
+// The three stages the conversion product actually implements.
 const WORKFLOW_STAGES = [
   {
     icon: FileSearch,
-    title: 'Nguồn tham chiếu',
-    caption: 'Trích xuất & lưu trữ',
-    desc: 'Tài liệu tham chiếu được tách theo Điều, Khoản, Điểm rồi lập chỉ mục để tra cứu theo ngữ nghĩa.',
+    title: 'Tải lên & phân loại',
+    caption: 'PDF scan hoặc bản số',
+    desc: 'Tệp PDF được phân tích từng trang: trang văn bản, bảng biểu hay ảnh, để chọn cách xử lý phù hợp.',
   },
   {
-    icon: FileText,
-    title: 'Văn bản hoàn chỉnh',
-    caption: 'Tạo dự thảo có căn cứ',
-    desc: 'Dự thảo được tạo hai giai đoạn: dựng outline trước, sau đó điền nội dung chi tiết theo từng điều khoản.',
+    icon: FileOutput,
+    title: 'Chuyển đổi DOCX',
+    caption: 'Giữ cấu trúc bản gốc',
+    desc: 'Nội dung được dựng lại thành văn bản Word với đoạn, bảng và thứ tự trang theo đúng bản gốc.',
   },
   {
     icon: FileCheck2,
-    title: 'Kiểm tra thể thức',
+    title: 'Kiểm tra độ tin cậy',
     caption: 'Theo Nghị định 30/2020/NĐ-CP',
-    desc: 'Các thành phần bắt buộc và bố cục được kiểm tra, kết quả hiển thị rõ trước khi phát hành.',
+    desc: 'Kết quả được chấm điểm theo từng trang; trang nghi ngờ được đánh dấu rõ để bạn rà soát trước khi dùng.',
   },
 ];
 
@@ -77,7 +77,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-canvas text-text-primary">
       <header className="sticky top-0 z-sticky flex h-[52px] items-center border-b border-hairline bg-surface">
         <div className="mx-auto flex w-full max-w-[1120px] items-center justify-between px-4 sm:px-6">
-          <Link href={isLoggedIn ? '/dashboard' : '/'} aria-label="DocAI">
+          <Link href={isLoggedIn ? '/convert' : '/'} aria-label="DocAI">
             <span className="text-section-title">DocAI</span>
           </Link>
 
@@ -113,7 +113,7 @@ export default function LandingPage() {
             </Button>
 
             <Link
-              href={isLoggedIn ? '/dashboard' : '/login'}
+              href={isLoggedIn ? '/convert' : '/login'}
               className="inline-flex min-h-11 items-center gap-1.5 rounded-control bg-action px-4 text-control font-semibold text-on-action transition-colors duration-fast hover:bg-action-hover"
             >
               {isLoggedIn ? 'Vào không gian làm việc' : 'Đăng nhập'}
@@ -128,20 +128,19 @@ export default function LandingPage() {
         <section className="px-4 py-16 sm:px-6 lg:py-24">
           <div className="mx-auto max-w-3xl text-center">
             <h1 className="text-4xl font-bold leading-tight sm:text-5xl">
-              Văn bản hành chính, từ nguồn đến bản hoàn chỉnh
+              PDF sang Word, chuẩn Nghị định 30
             </h1>
             <p className="mx-auto mt-6 max-w-[60ch] text-body text-text-secondary">
-              Cung cấp tài liệu tham chiếu và yêu cầu nghiệp vụ. DocAI tạo dự thảo có căn cứ
-              pháp lý, giữ chuẩn mẫu DOCX và hiển thị rõ từng kết quả kiểm tra trước khi bạn
-              phát hành.
+              Tải lên tệp PDF scan hoặc bản số. DocAI chuyển thành văn bản Word giữ đúng cấu
+              trúc, áp thể thức Nghị định 30/2020/NĐ-CP và đánh dấu rõ những trang cần kiểm tra.
             </p>
 
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
-                href={isLoggedIn ? '/generate' : '/login'}
+                href={isLoggedIn ? '/convert' : '/login'}
                 className="inline-flex min-h-11 items-center gap-2 rounded-control bg-action px-6 py-3 text-body font-semibold text-on-action transition-colors duration-fast hover:bg-action-hover"
               >
-                {isLoggedIn ? 'Bắt đầu soạn thảo' : 'Đăng nhập để soạn thảo'}
+                {isLoggedIn ? 'Bắt đầu chuyển đổi' : 'Đăng nhập để chuyển đổi'}
                 <ChevronRight aria-hidden="true" className="h-4 w-4" />
               </Link>
               {/* Borderless secondary learning link. */}
@@ -159,7 +158,7 @@ export default function LandingPage() {
         {/* Real workflow proof: what the product does, not invented metrics. */}
         <section id="workflow" className="border-t border-hairline px-4 py-16 sm:px-6 lg:py-20">
           <div className="mx-auto max-w-[1120px]">
-            <h2 className="text-page-title">Quy trình soạn thảo</h2>
+            <h2 className="text-page-title">Quy trình chuyển đổi</h2>
             <div className="mt-8 grid gap-4 md:grid-cols-3">
               {WORKFLOW_STAGES.map(({ icon: Icon, title, caption, desc }) => (
                 <div
@@ -184,7 +183,7 @@ export default function LandingPage() {
             <div className="lg:sticky lg:top-24 lg:self-start">
               <h2 className="text-page-title">Khả năng cốt lõi</h2>
               <Link
-                href={isLoggedIn ? '/generate' : '/login'}
+                href={isLoggedIn ? '/convert' : '/login'}
                 className="mt-4 inline-flex min-h-11 items-center gap-2 text-control font-semibold text-action transition-opacity hover:opacity-80"
               >
                 {isLoggedIn ? 'Bắt đầu ngay' : 'Đăng nhập'}
@@ -225,17 +224,17 @@ export default function LandingPage() {
         <section className="border-t border-hairline px-4 py-16 text-center sm:px-6 lg:py-20">
           <div className="mx-auto max-w-2xl">
             <h2 className="text-page-title">
-              Tập trung vào quyết định. Để hệ thống lo phần trình bày.
+              Bản Word dùng được ngay. Độ tin cậy nhìn thấy rõ.
             </h2>
             <p className="mx-auto mt-4 max-w-[60ch] text-body text-text-secondary">
-              Bắt đầu từ nguồn tài liệu của bạn và tạo một bản thảo có thể kiểm tra, chỉnh sửa
-              và xuất ngay trong cùng quy trình.
+              Tải lên tệp PDF của bạn và nhận về văn bản Word chuẩn thể thức, kèm báo cáo độ
+              tin cậy từng trang để bạn yên tâm sử dụng.
             </p>
             <Link
-              href={isLoggedIn ? '/generate' : '/login'}
+              href={isLoggedIn ? '/convert' : '/login'}
               className="mt-8 inline-flex min-h-11 items-center gap-2 rounded-control bg-action px-6 py-3 text-body font-semibold text-on-action transition-colors duration-fast hover:bg-action-hover"
             >
-              {isLoggedIn ? 'Tạo văn bản' : 'Đăng nhập'}
+              {isLoggedIn ? 'Chuyển đổi ngay' : 'Đăng nhập'}
               <ChevronRight aria-hidden="true" className="h-4 w-4" />
             </Link>
           </div>
@@ -254,7 +253,7 @@ export default function LandingPage() {
             </Link>
           </div>
           <p className="text-metadata text-text-muted">
-            © {new Date().getFullYear()} DocAI. Hệ thống hỗ trợ soạn thảo văn bản hành chính.
+            © {new Date().getFullYear()} DocAI. Chuyển đổi PDF sang Word chuẩn Nghị định 30/2020/NĐ-CP.
           </p>
         </div>
       </footer>

@@ -1,24 +1,17 @@
-import { isLLMProvider, providerRequiresApiKey } from '../constants/llm-providers';
 import { getPasswordResetMode } from './password_reset_mode';
 
 const REQUIRED = [
-  'DATABASE_URL', 'REDIS_URL',
-  'DOCLING_URL', 'EMBEDDINGS_URL', 'JWT_SECRET', 'LLM_CONFIG_ENCRYPTION_KEY',
-  'DOCUMENT_RENDERER_URL', 'RENDERER_INTERNAL_TOKEN',
+  'DATABASE_URL', 'REDIS_URL', 'JWT_SECRET', 'CONVERSION_SERVICE_URL',
 ] as const;
 
 const DEV_DEFAULTS = new Set([
   'dev-jwt-secret-do-not-use-in-production',
   'dev-jwt-secret-change-in-production',
   'change-me-to-a-strong-jwt-secret-at-least-32-chars',
-  'change-me-to-a-strong-token',
-  'test-renderer-token',
 ]);
 
 const BOOLEAN_VARS = [
-  'ALLOW_STACK_TRACES', 'DISABLE_PUBLIC_REGISTER', 'ENABLE_QUERY_REWRITER',
-  'ENABLE_SUMMARY_CHUNKS', 'ENABLE_RERANK_FILTER', 'ENABLE_SELF_CORRECT',
-  'RAG_OBSERVABILITY', 'EVAL_GENERATE',
+  'ALLOW_STACK_TRACES', 'DISABLE_PUBLIC_REGISTER',
 ] as const;
 
 const NUMERIC_VARS: Record<string, { min: number; max: number; integer?: boolean }> = {
@@ -27,25 +20,8 @@ const NUMERIC_VARS: Record<string, { min: number; max: number; integer?: boolean
   RATE_LIMIT_WINDOW_MS: { min: 1_000, max: 86_400_000, integer: true },
   RATE_LIMIT_MAX: { min: 1, max: 100_000, integer: true },
   DB_CONNECTION_LIMIT: { min: 1, max: 200, integer: true },
-  INGESTION_WORKER_LEASE_MS: { min: 10_000, max: 3_600_000, integer: true },
-  INGESTION_WORKER_HEARTBEAT_MS: { min: 1_000, max: 600_000, integer: true },
-  INGESTION_WORKER_POLL_MS: { min: 50, max: 60_000, integer: true },
-  TEMPLATE_WORKER_POLL_MS: { min: 100, max: 60_000, integer: true },
-  MAX_TEMPLATES_PER_USER: { min: 1, max: 10_000, integer: true },
-  MAX_PENDING_TEMPLATES_PER_USER: { min: 1, max: 100, integer: true },
   SHUTDOWN_GRACE_MS: { min: 1_000, max: 300_000, integer: true },
-  RAG_MAX_RETRIES: { min: 0, max: 1, integer: true },
-  RAG_RETRIEVAL_CANDIDATES: { min: 1, max: 100, integer: true },
-  RAG_MAX_QUERY_VARIANTS: { min: 1, max: 10, integer: true },
-  RAG_CONTEXT_MAX_CHARS: { min: 1_000, max: 100_000, integer: true },
-  RAG_QUERY_EMBED_CACHE_TTL_SECONDS: { min: 1, max: 86_400, integer: true },
-  RAG_RERANK_CHUNK_CHARS: { min: 200, max: 4_000, integer: true },
-  RAG_RERANK_MAX_CHARS: { min: 2_000, max: 40_000, integer: true },
-  EMBEDDINGS_BATCH_TIMEOUT_MS: { min: 5_000, max: 900_000, integer: true },
-  RAG_RRF_K: { min: 1, max: 1_000 },
-  RAG_OVERFETCH_MULTIPLIER: { min: 1, max: 20 },
-  RAG_FAITHFULNESS_MIN: { min: 0, max: 1 },
-  RAG_ANSWERABILITY_MIN: { min: 0, max: 1 },
+  CONVERSION_TIMEOUT_MS: { min: 1_000, max: 600_000, integer: true },
 };
 
 function validateUrl(name: string, protocols: string[], allowCredentials = false): void {
@@ -121,21 +97,10 @@ export function validateEnv(): void {
   const jwtSecret = process.env.JWT_SECRET!;
   if (jwtSecret.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
   if (isProd && DEV_DEFAULTS.has(jwtSecret)) throw new Error('JWT_SECRET is a known dev default');
-  const encryptionKey = process.env.LLM_CONFIG_ENCRYPTION_KEY!;
-  if (!/^[a-f0-9]{64}$/i.test(encryptionKey)) {
-    throw new Error('LLM_CONFIG_ENCRYPTION_KEY must be 64 hex characters (AES-256-GCM)');
-  }
-  const rendererToken = process.env.RENDERER_INTERNAL_TOKEN!;
-  if (rendererToken.length < 32 || rendererToken.trim() !== rendererToken
-    || new Set(rendererToken).size < 10 || DEV_DEFAULTS.has(rendererToken)) {
-    throw new Error('RENDERER_INTERNAL_TOKEN must be a strong value of at least 32 characters');
-  }
 
   validateUrl('DATABASE_URL', ['postgres:', 'postgresql:'], true);
   validateUrl('REDIS_URL', ['redis:', 'rediss:'], true);
-  for (const name of ['DOCLING_URL', 'EMBEDDINGS_URL', 'DOCUMENT_RENDERER_URL']) {
-    validateUrl(name, ['http:', 'https:']);
-  }
+  validateUrl('CONVERSION_SERVICE_URL', ['http:', 'https:']);
 
   if (resetMode === 'email') {
     if (Boolean(process.env.SMTP_USER?.trim()) !== Boolean(process.env.SMTP_PASS?.trim())) {
@@ -166,26 +131,6 @@ export function validateEnv(): void {
     }
   }
 
-  const defaultLlmValues = [
-    process.env.DEFAULT_LLM_PROVIDER,
-    process.env.DEFAULT_LLM_BASE_URL,
-    process.env.DEFAULT_LLM_MODEL,
-    process.env.DEFAULT_LLM_API_KEY,
-  ];
-  if (defaultLlmValues.some(value => value?.trim())) {
-    const provider = process.env.DEFAULT_LLM_PROVIDER;
-    if (!provider || !isLLMProvider(provider)) {
-      throw new Error('DEFAULT_LLM_PROVIDER must be openai, openrouter, gemini, lmstudio, ollama, or custom');
-    }
-    if (!process.env.DEFAULT_LLM_BASE_URL?.trim() || !process.env.DEFAULT_LLM_MODEL?.trim()) {
-      throw new Error('DEFAULT_LLM_BASE_URL and DEFAULT_LLM_MODEL are required when a system LLM default is configured');
-    }
-    validateUrl('DEFAULT_LLM_BASE_URL', ['http:', 'https:']);
-    if (providerRequiresApiKey(provider) && !process.env.DEFAULT_LLM_API_KEY?.trim()) {
-      throw new Error('DEFAULT_LLM_API_KEY is required for cloud system defaults');
-    }
-  }
-
   for (const name of BOOLEAN_VARS) {
     const value = process.env[name];
     if (value !== undefined && value !== 'true' && value !== 'false') {
@@ -199,25 +144,6 @@ export function validateEnv(): void {
     if (!Number.isFinite(value) || (limits.integer && !Number.isSafeInteger(value))
       || value < limits.min || value > limits.max) {
       throw new Error(`${name} must be ${limits.integer ? 'an integer' : 'a number'} between ${limits.min} and ${limits.max}`);
-    }
-  }
-  const lease = Number(process.env.INGESTION_WORKER_LEASE_MS || 15 * 60_000);
-  const heartbeat = Number(process.env.INGESTION_WORKER_HEARTBEAT_MS || 30_000);
-  if (heartbeat >= lease) throw new Error('INGESTION_WORKER_HEARTBEAT_MS must be less than INGESTION_WORKER_LEASE_MS');
-  const maxTemplates = Number(process.env.MAX_TEMPLATES_PER_USER || 100);
-  const maxPendingTemplates = Number(process.env.MAX_PENDING_TEMPLATES_PER_USER || 5);
-  if (maxPendingTemplates > maxTemplates) {
-    throw new Error('MAX_PENDING_TEMPLATES_PER_USER must not exceed MAX_TEMPLATES_PER_USER');
-  }
-
-  const localAllowlist = process.env.LOCAL_LLM_HOST_ALLOWLIST;
-  if (localAllowlist) {
-    for (const entry of localAllowlist.split(',').map(value => value.trim()).filter(Boolean)) {
-      let parsed: URL;
-      try { parsed = new URL(`http://${entry}`); } catch { throw new Error(`Invalid LOCAL_LLM_HOST_ALLOWLIST entry: "${entry}"`); }
-      if (!parsed.hostname || !parsed.port || parsed.pathname !== '/' || parsed.search || parsed.hash) {
-        throw new Error(`Invalid LOCAL_LLM_HOST_ALLOWLIST entry: "${entry}"; expected host:port`);
-      }
     }
   }
 

@@ -21,31 +21,11 @@ const FORWARD_HEADERS = new Set([
 const SEGMENT = '[A-Za-z0-9_-]+';
 const PROXY_RULES: ReadonlyArray<{ pattern: RegExp; methods: ReadonlySet<string> }> = [
   { pattern: /^health$/, methods: new Set(['GET']) },
-  { pattern: /^workflow\/types$/, methods: new Set(['GET']) },
-  { pattern: new RegExp(`^workflow\\/fields\\/${SEGMENT}$`), methods: new Set(['GET']) },
-  { pattern: new RegExp(`^workflow\\/template\\/${SEGMENT}$`), methods: new Set(['GET']) },
-  { pattern: /^workflow\/(extract-fields|stream|generate|validate)$/, methods: new Set(['POST']) },
-  { pattern: /^feedback\/submit$/, methods: new Set(['POST']) },
-  { pattern: /^rag\/index$/, methods: new Set(['POST']) },
-  { pattern: /^qa\/ask$/, methods: new Set(['POST']) },
   { pattern: /^convert$/, methods: new Set(['POST']) },
   { pattern: /^convert\/bulk$/, methods: new Set(['POST']) },
   { pattern: new RegExp(`^convert\\/${SEGMENT}$`), methods: new Set(['GET']) },
   { pattern: new RegExp(`^convert\\/${SEGMENT}\\/report$`), methods: new Set(['GET']) },
   { pattern: new RegExp(`^convert\\/${SEGMENT}\\/result$`), methods: new Set(['GET']) },
-  { pattern: /^documents$/, methods: new Set(['GET']) },
-  { pattern: new RegExp(`^documents\\/${SEGMENT}$`), methods: new Set(['GET', 'DELETE']) },
-  { pattern: new RegExp(`^documents\\/${SEGMENT}\\/export-docx$`), methods: new Set(['GET']) },
-  { pattern: /^templates$/, methods: new Set(['GET', 'POST']) },
-  { pattern: new RegExp(`^templates\\/${SEGMENT}$`), methods: new Set(['GET', 'PATCH', 'DELETE']) },
-  { pattern: new RegExp(`^templates\\/${SEGMENT}\\/mapping$`), methods: new Set(['PUT']) },
-  { pattern: new RegExp(`^templates\\/${SEGMENT}\\/analyze$`), methods: new Set(['POST']) },
-  { pattern: new RegExp(`^templates\\/${SEGMENT}\\/previews\\/\\d+$`), methods: new Set(['GET']) },
-  { pattern: new RegExp(`^templates\\/${SEGMENT}\\/download$`), methods: new Set(['GET']) },
-  { pattern: /^settings\/llm$/, methods: new Set(['GET', 'POST', 'DELETE']) },
-  { pattern: /^settings\/llm\/test$/, methods: new Set(['POST']) },
-  { pattern: /^settings\/llm\/openrouter\/models$/, methods: new Set(['GET']) },
-  { pattern: /^settings\/document-profile$/, methods: new Set(['GET', 'PUT']) },
 ];
 
 export function proxyRequestStatus(path: string, method: string): 200 | 404 | 405 {

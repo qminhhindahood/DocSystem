@@ -6,7 +6,6 @@ RUN npm ci
 
 FROM dependencies AS build
 COPY prisma ./prisma/
-COPY config ./config/
 RUN npx prisma generate
 COPY tsconfig.json ./
 COPY src ./src/
@@ -24,7 +23,6 @@ RUN apk add --no-cache libc6-compat openssl tini \
 COPY --from=production-dependencies --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/prisma ./prisma
-COPY --from=build --chown=node:node /app/config ./config
 COPY --chown=node:node package.json ./package.json
 USER node
 EXPOSE 3001

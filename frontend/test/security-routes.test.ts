@@ -16,50 +16,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('analytics tracking route', () => {
-  it('requires a session and bounds event batches', async () => {
-    const { POST } = await import('@/app/api/analytics/track/route');
-    const unauthenticated = new NextRequest('http://localhost/api/analytics/track', {
-      method: 'POST',
-      body: JSON.stringify({ events: [{ event: 'page_view' }] }),
-      headers: { 'content-type': 'application/json', origin: 'http://localhost' },
-    });
-    expect((await POST(unauthenticated)).status).toBe(401);
-
-    forwardToBackend.mockResolvedValueOnce(new Response('{}', { status: 401 }));
-    const forgedCookie = new NextRequest('http://localhost/api/analytics/track', {
-      method: 'POST',
-      body: JSON.stringify({ events: [{ event: 'page_view' }] }),
-      headers: { 'content-type': 'application/json', cookie: 'docai_session=forged', origin: 'http://localhost' },
-    });
-    expect((await POST(forgedCookie)).status).toBe(401);
-
-    const oversized = new NextRequest('http://localhost/api/analytics/track', {
-      method: 'POST',
-      body: JSON.stringify({ events: Array.from({ length: 51 }, () => ({ event: 'page_view' })) }),
-      headers: { 'content-type': 'application/json', cookie: 'docai_session=token', origin: 'http://localhost' },
-    });
-    expect((await POST(oversized)).status).toBe(400);
-  });
-
-  it('accepts a bounded valid batch without logging user event data', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    const { POST } = await import('@/app/api/analytics/track/route');
-    const request = new NextRequest('http://localhost/api/analytics/track', {
-      method: 'POST',
-      body: JSON.stringify({ events: [{ event: 'page_view', timestamp: Date.now(), category: 'navigation' }] }),
-      headers: { 'content-type': 'application/json', cookie: 'docai_session=token', origin: 'http://localhost' },
-    });
-
-    expect((await POST(request)).status).toBe(200);
-    expect(log).not.toHaveBeenCalled();
-  });
-});
-
 describe('backend proxy forwarding headers', () => {
   it('does not trust caller-supplied forwarding identity headers', async () => {
     const { POST } = await import('@/app/api/proxy/[...path]/route');
-    const request = new NextRequest('http://localhost/api/proxy/workflow/stream', {
+    const request = new NextRequest('http://localhost/api/proxy/convert', {
       method: 'POST',
       body: '{}',
       headers: {
@@ -80,8 +40,11 @@ describe('backend proxy forwarding headers', () => {
 
   it.each([
     ['/admin/users', 'GET'],
-    ['/workflow/types', 'DELETE'],
-    ['/templates/template-1/analyze', 'DELETE'],
+    ['/workflow/types', 'GET'],
+    ['/documents', 'GET'],
+    ['/templates', 'GET'],
+    ['/qa/ask', 'POST'],
+    ['/convert/job-1', 'DELETE'],
   ])('rejects non-allowlisted proxy request %s %s', async (path, method) => {
     const route = await import('@/app/api/proxy/[...path]/route');
     const handler = route[method as keyof typeof route] as ((request: NextRequest) => Promise<Response>) | undefined;
@@ -93,6 +56,10 @@ describe('backend proxy forwarding headers', () => {
       method,
       headers: { cookie: 'docai_session=token', origin: 'http://localhost' },
     });
-    expect((await handler(request)).status).toBe(method === 'GET' ? 404 : 405);
+    const status = (await handler(request)).status;
+    // Removed surfaces are gone from the allowlist entirely (404); a surviving
+    // path with a disallowed method is 405.
+    expect([404, 405]).toContain(status);
+    if (path.startsWith('/convert')) expect(status).toBe(405);
   });
 });

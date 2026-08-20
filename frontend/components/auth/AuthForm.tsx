@@ -92,7 +92,7 @@ export function AuthForm({ mode, passwordResetEnabled = true, turnstileSiteKey }
       const returnTo = searchParams.get('returnTo');
       const target = isLogin
         ? normalizeClientReturnTo(returnTo)
-        : '/dashboard';
+        : '/convert';
 
       router.replace(target);
     } catch {

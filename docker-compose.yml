@@ -3,7 +3,8 @@
 # touches the master stack or repo.
 #
 #   docker compose up -d --build
-#   (backend: http://localhost:3001  conversion: http://localhost:8004)
+#   (frontend: http://localhost:3000  backend: http://localhost:3001
+#    conversion: http://localhost:8004)
 #
 # Conversion flow: frontend (/api/proxy) -> backend POST /api/convert ->
 # Redis conversion_queue -> conversion-worker -> DOCX result.
@@ -11,7 +12,7 @@
 # this project (the /api/convert path never touches them).
 services:
   postgres:
-    image: pgvector/pgvector:pg15
+    image: postgres:15-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ai_docs}
@@ -90,21 +91,19 @@ services:
       conversion:
         condition: service_healthy
 
-  # One-shot: apply Prisma migrations to a fresh database before the backend
-  # boots. The backend image CMD stays "node dist/index.js" (no DB mutations at
-  # container start — enforced by backend/src/index.worker_wiring.test.ts).
+  # One-shot: apply the single auth-only Prisma migration (ADR-0001) to a fresh
+  # database before the backend boots. The backend image CMD stays
+  # "node dist/index.js" (no DB mutations at container start — enforced by
+  # backend/src/index.worker_wiring.test.ts).
   migrate:
     image: standalone/backend:latest
     restart: "no"
-    # Mirrors the backend "deploy:migrate" sequence: prepare_database baselines
-    # the pre-init rename migration on a fresh DB, then prisma applies the rest.
     # node_modules/.bin is added to PATH because the runtime image strips npm/npx.
     command:
       - sh
       - -c
       - >
         export PATH="/app/node_modules/.bin:$$PATH" &&
-        node dist/scripts/prepare_database.js &&
         prisma migrate deploy
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${DB_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-ai_docs}?schema=public
@@ -126,15 +125,11 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${DB_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-ai_docs}?schema=public
       REDIS_URL: redis://redis:6379
       CONVERSION_SERVICE_URL: http://conversion:8004
-      TEMPLATE_STORAGE_DIR: /data/templates
       UPLOAD_DIR: /data/uploads
-      RAG_STATE_DIR: /data/rag-state
       ALLOW_STACK_TRACES: ${ALLOW_STACK_TRACES:-false}
       NODE_ENV: ${NODE_ENV:-development}
     volumes:
-      - template_storage:/data/templates
       - uploads_data:/data/uploads
-      - rag_state:/data/rag-state
     depends_on:
       postgres:
         condition: service_healthy
@@ -147,8 +142,39 @@ services:
     healthcheck:
       # /health returns 200 or 503 (degraded). 503 is EXPECTED here because
       # docling/embeddings/renderer are absent — the convert path never uses
-      # them. Treat 200/503 as "backend alive".
-      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/health | grep -Eq '200|503'"]
+      # them. Treat 200/503 as "backend alive". node:22-alpine ships no curl,
+      # so probe with the runtime's own Node (global fetch).
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health',{signal:AbortSignal.timeout(5000)}).then(r=>process.exit(r.status===200||r.status===503?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Next.js production build (standalone output) proxying /api/* to the backend.
+  # BACKEND_API_URL is consumed at RUNTIME by the server-side proxy route, so it
+  # is injected here (not baked at image build). One `docker compose up` runs the
+  # whole product: database, queue, conversion, worker, backend, frontend.
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: standalone/frontend:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    environment:
+      # Bind the standalone Next.js server to all interfaces inside the container.
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      # Server-side proxy target (frontend/app/api/proxy/[...path]/route.ts).
+      BACKEND_API_URL: http://backend:3001
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      # /api/live is a self-contained liveness probe (does not cascade to the
+      # backend). node:22-alpine ships no curl, so probe with Node's fetch.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/live',{signal:AbortSignal.timeout(3000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -162,12 +188,10 @@ services:
       - /bin/sh
       - -ec
       - |
-        mkdir -p /data/templates /data/uploads /data/rag-state
-        chown -R 1000:1000 /data/templates /data/uploads /data/rag-state
+        mkdir -p /data/uploads
+        chown -R 1000:1000 /data/uploads
     volumes:
-      - template_storage:/data/templates
       - uploads_data:/data/uploads
-      - rag_state:/data/rag-state
     network_mode: none
     read_only: true
 
@@ -176,7 +200,5 @@ volumes:
     name: ${POSTGRES_VOLUME:-standalone_postgres_data}
   redis_data:
     name: ${REDIS_VOLUME:-standalone_redis_data}
-  template_storage:
   uploads_data:
-  rag_state:
   conversion_work:

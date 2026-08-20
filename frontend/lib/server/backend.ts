@@ -1,5 +1,3 @@
-import { getCloudRunAuthorization } from './cloud-run-auth';
-
 const BACKEND_URL = (process.env.BACKEND_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
 
 export function backendUrl(): string {
@@ -19,7 +17,6 @@ export async function forwardToBackend(
   const target = `${BACKEND_URL}${path}`;
   const headers: Record<string, string> = {
     ...options.headers,
-    ...(await getCloudRunAuthorization(target)),
   };
   const init: RequestInit & { duplex?: string } = { method, headers, signal: options.signal };
 

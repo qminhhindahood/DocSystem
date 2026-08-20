@@ -7,18 +7,12 @@ import { cn } from '@/components/lib/cn';
 import { NAV_ROUTES } from '@/lib/constants/routes';
 import { useTheme } from '@/lib/theme';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { LLMSettingsDialog } from '@/components/settings/LLMSettingsDialog';
 import {
-  FileText,
-  FolderOpen,
-  MessageSquare,
+  FileOutput,
   X,
-  LayoutTemplate,
-  LayoutGrid,
   Moon,
   Sun,
   LogOut,
-  FileOutput,
 } from 'lucide-react';
 
 interface SidebarItem {
@@ -30,17 +24,12 @@ interface SidebarItem {
 }
 
 const ROUTE_ICONS = {
-  dashboard: LayoutGrid,
-  generate: FileText,
-  documents: FolderOpen,
   convert: FileOutput,
-  templates: LayoutTemplate,
-  qa: MessageSquare,
 };
 
 const navItems: SidebarItem[] = NAV_ROUTES.map((route) => ({
   ...route,
-  icon: ROUTE_ICONS[route.id],
+  icon: ROUTE_ICONS[route.id as keyof typeof ROUTE_ICONS],
 }));
 
 interface SidebarProps {
@@ -127,9 +116,9 @@ export function Sidebar({ open, onOpenChange, triggerRef, className }: SidebarPr
         <div className="flex h-full flex-col">
           {/* Brand */}
           <div className="flex h-[52px] flex-shrink-0 items-center px-4 lg:h-14">
-            <Link href="/dashboard" className="flex items-center gap-2">
+            <Link href="/convert" className="flex items-center gap-2">
               <span className="flex h-8 w-8 items-center justify-center rounded-control bg-action">
-                <FileText className="h-4 w-4 text-on-action" />
+                <FileOutput className="h-4 w-4 text-on-action" />
               </span>
               <span className="text-section-title text-text-primary">DocAI</span>
             </Link>
@@ -170,7 +159,6 @@ export function Sidebar({ open, onOpenChange, triggerRef, className }: SidebarPr
 
           {/* Footer utilities */}
           <div className="flex-shrink-0 space-y-1 border-t border-hairline p-3">
-            <LLMSettingsDialog />
             {/* Visible text carries the accessible name (WCAG 2.5.3); the icon shows
                 which theme the control switches to. */}
             <button type="button" onClick={toggle} className={utilityClass}>

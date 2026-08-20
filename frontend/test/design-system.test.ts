@@ -109,12 +109,10 @@ describe('rounded civic workspace design contract', () => {
     const css = readProjectFile('app/globals.css');
     const config = readProjectFile('tailwind.config.js');
     const selectSource = readProjectFile('components/ui/select.tsx');
-    const modelPickerSource = readProjectFile('components/settings/OpenRouterModelPicker.tsx');
 
     expect(css).toContain('--z-popover: 1050');
     expect(config).toContain("popover: 'var(--z-popover)'");
     expect(selectSource).toContain('z-popover');
-    expect(modelPickerSource).toContain('z-popover');
   });
 
   it('reserves semantic inline space for leading field icons', () => {

@@ -21,7 +21,7 @@ function mutationRequest(path: string, body: unknown, origin = 'https://app.exam
 
 describe('normalizeReturnTo', () => {
   it('accepts a simple path', () => {
-    expect(normalizeReturnTo('/documents?id=1')).toBe('/documents?id=1');
+    expect(normalizeReturnTo('/convert?job=1')).toBe('/convert?job=1');
   });
 
   it('returns / for null', () => {
@@ -53,7 +53,7 @@ describe('normalizeReturnTo', () => {
   });
 
   it('rejects path with backslash', () => {
-    expect(normalizeReturnTo('/documents\\evil')).toBe('/');
+    expect(normalizeReturnTo('/convert\\evil')).toBe('/');
   });
 
   it('returns / for malformed encoded string', () => {

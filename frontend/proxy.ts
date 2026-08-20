@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const SESSION_COOKIE = 'docai_session';
-const PROTECTED_PATHS = ['/dashboard', '/generate', '/documents', '/qa', '/templates', '/settings'];
+const PROTECTED_PATHS = ['/convert'];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

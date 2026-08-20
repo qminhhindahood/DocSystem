@@ -5,7 +5,7 @@ import { Plus, Download, FileText, FileOutput, AlertTriangle } from "lucide-reac
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ConvertUploadDialog } from "@/components/convert/ConvertUploadDialog";
+import { ConvertUploadDialog, SubmittedJob } from "@/components/convert/ConvertUploadDialog";
 import {
   getConversionStatus,
   getConversionReport,
@@ -13,7 +13,6 @@ import {
   ConversionReport,
   ConversionStatus,
 } from "@/lib/convert-api";
-import { SubmittedJob } from "@/components/convert/ConvertUploadDialog";
 
 interface ConversionJob {
   jobId: string;
