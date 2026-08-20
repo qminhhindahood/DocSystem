@@ -69,9 +69,13 @@ describe('removed master-stack surfaces (standalone prune, ticket 04)', () => {
 
   it.each([
     'qa', 'rag', 'workflow', 'templates', 'feedback',
-    'llm-settings', 'documents', 'document-profile',
+    'documents', 'document-profile',
   ])('route %s is deleted', (name) => {
     expect(fs.existsSync(path.join(srcRoot, 'routes', `${name}.ts`))).toBe(false);
+  });
+
+  it('llm-settings route is present again (BYOK vision provider settings)', () => {
+    expect(fs.existsSync(path.join(srcRoot, 'routes', 'llm-settings.ts'))).toBe(true);
   });
 
   it.each([
@@ -79,7 +83,7 @@ describe('removed master-stack surfaces (standalone prune, ticket 04)', () => {
     'retrieval_pipeline', 'retrieval_observability', 'self_correct', 'structured_output_service',
     'cmd_parser', 'docx_service', 'feedback_service', 'feedback_analysis',
     'ingestion_service', 'ingestion_worker', 'ingestion_job_repository',
-    'llm_config_service', 'openrouter_models', 'document_profile_service',
+    'document_profile_service',
     'template_service', 'template_compiler', 'template_generation_service',
     'template_semantics', 'template_typography_rules', 'template_vision_service',
     'template_service_client', 'template_storage_service', 'template_compilation_worker',
@@ -89,16 +93,22 @@ describe('removed master-stack surfaces (standalone prune, ticket 04)', () => {
 
   it.each([
     'abort', 'cloud_run_auth', 'document_access', 'embeddings_client',
-    'encryption', 'feedback_utils', 'sse_parser', 'urlGuard', 'sanitize',
+    'feedback_utils', 'sse_parser', 'sanitize',
   ])('util %s is deleted', (name) => {
     expect(fs.existsSync(path.join(srcRoot, 'utils', `${name}.ts`))).toBe(false);
   });
 
-  it('index.ts mounts only auth and convert routes', () => {
+  it('encryption and urlGuard utils are present again (BYOK key storage)', () => {
+    expect(fs.existsSync(path.join(srcRoot, 'utils', 'encryption.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(srcRoot, 'utils', 'urlGuard.ts'))).toBe(true);
+  });
+
+  it('index.ts mounts only auth, convert, and BYOK settings routes', () => {
     const indexSrc = fs.readFileSync(path.join(srcRoot, 'index.ts'), 'utf-8');
     expect(indexSrc).toContain("app.use('/api/auth', authRoutes)");
     expect(indexSrc).toContain("app.use('/api/convert', convertRoutes)");
-    for (const dead of ['qaRoutes', 'ragRoutes', 'workflowRoutes', 'templateRoutes', 'feedbackRoutes', 'llmSettingsRoutes', 'documentsRoutes', 'documentProfileRoutes']) {
+    expect(indexSrc).toContain("app.use('/api/settings/llm', llmSettingsRoutes)");
+    for (const dead of ['qaRoutes', 'ragRoutes', 'workflowRoutes', 'templateRoutes', 'feedbackRoutes', 'documentsRoutes', 'documentProfileRoutes']) {
       expect(indexSrc).not.toContain(dead);
     }
   });

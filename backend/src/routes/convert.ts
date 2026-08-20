@@ -23,6 +23,7 @@ import {
   getConversionReport,
   submitBulkConversion,
 } from '../services/conversion_service_client';
+import { getVisionConfig } from '../services/llm_config_service';
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '../../uploads');
 const INCOMING_UPLOAD_DIR = path.join(UPLOAD_DIR, '.incoming');
@@ -93,7 +94,11 @@ router.post(
         return res.status(400).json({ error: 'Invalid PDF file' });
       }
       const userId = req.user!.userId;
-      const result = await submitConversion(file.path, file.originalname || 'upload.pdf', userId);
+      // BYOK: attach the caller's decrypted Gemini config (if any) so scanned
+      // pages can be transcribed. Null when the user has no usable key — the
+      // conversion service answers scanned uploads with its upfront 422.
+      const vision = await getVisionConfig(userId);
+      const result = await submitConversion(file.path, file.originalname || 'upload.pdf', userId, vision);
       return res.status(202).json({ success: true, jobId: result.jobId });
     } catch (error: any) {
       const status = error?.response?.status;
@@ -131,12 +136,13 @@ router.post(
         }
         staged.push({ path: file.path, name: file.originalname || 'upload.pdf' });
       }
-      const result = await submitBulkConversion(staged, req.user!.userId);
+      const vision = await getVisionConfig(req.user!.userId);
+      const result = await submitBulkConversion(staged, req.user!.userId, vision);
       return res.status(202).json({ success: true, ...result });
     } catch (error: any) {
       const status = error?.response?.status;
       const detail = error?.response?.data?.detail;
-      if (status === 429 || status === 400) {
+      if (status === 422 || status === 429 || status === 400) {
         return res.status(status).json({ error: detail || 'Bulk conversion rejected' });
       }
       console.error('Bulk conversion submit error:', error?.message || error);

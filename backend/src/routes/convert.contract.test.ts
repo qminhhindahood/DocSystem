@@ -9,6 +9,11 @@ const mockGetConversionStatus = jest.fn();
 const mockGetConversionResult = jest.fn();
 const mockGetConversionReport = jest.fn();
 const mockSubmitBulkConversion = jest.fn();
+const mockGetVisionConfig = jest.fn();
+
+jest.mock('../services/llm_config_service', () => ({
+  getVisionConfig: (...args: unknown[]) => mockGetVisionConfig(...args),
+}));
 
 jest.mock('../utils/prisma', () => ({
   prisma: {
@@ -33,6 +38,8 @@ describe('convert API contract', () => {
     mockUserFindUnique.mockResolvedValue({
       id: 'user-a', username: 'alice', isDisabled: false, sessionVersion: 0,
     });
+    // Default: no stored vision config (most users).
+    mockGetVisionConfig.mockResolvedValue(null);
     app = express();
     app.use(express.json());
     app.use('/api/convert', convertRoutes);
@@ -80,10 +87,97 @@ describe('convert API contract', () => {
       expect(response.status).toBe(202);
       const body = await response.json();
       expect(body.jobId).toBe('job-123');
-      // userId forwarded for quota
+      // userId forwarded for quota; vision is null when no key is stored
       expect(mockSubmitConversion).toHaveBeenCalledWith(
-        expect.any(String), 'doc.pdf', 'user-a',
+        expect.any(String), 'doc.pdf', 'user-a', null,
       );
+    });
+  });
+
+  describe('BYOK vision attachment (seam)', () => {
+    const pdfForm = () => {
+      const form = new FormData();
+      form.append(
+        'file',
+        new Blob([new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34])], {
+          type: 'application/pdf',
+        }),
+        'doc.pdf',
+      );
+      return form;
+    };
+
+    it('attaches the decrypted Gemini config when the user has one', async () => {
+      const vision = { provider: 'gemini', model: 'gemini-2.5-flash', apiKey: 'user-key' };
+      mockGetVisionConfig.mockResolvedValue(vision);
+      mockSubmitConversion.mockResolvedValue({ jobId: 'job-v', mode: 'queue' });
+      await withHttpServer(app, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/convert/`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: pdfForm(),
+        });
+        expect(response.status).toBe(202);
+        expect(mockGetVisionConfig).toHaveBeenCalledWith('user-a');
+        expect(mockSubmitConversion).toHaveBeenCalledWith(
+          expect.any(String), 'doc.pdf', 'user-a', vision,
+        );
+      });
+    });
+
+    it('passes null vision when the user has no usable key', async () => {
+      mockGetVisionConfig.mockResolvedValue(null);
+      mockSubmitConversion.mockResolvedValue({ jobId: 'job-n', mode: 'queue' });
+      await withHttpServer(app, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/convert/`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: pdfForm(),
+        });
+        expect(response.status).toBe(202);
+        expect(mockSubmitConversion).toHaveBeenCalledWith(
+          expect.any(String), 'doc.pdf', 'user-a', null,
+        );
+      });
+    });
+
+    it('attaches vision to bulk submissions too', async () => {
+      const vision = { provider: 'gemini', model: 'gemini-2.5-flash', apiKey: 'user-key' };
+      mockGetVisionConfig.mockResolvedValue(vision);
+      mockSubmitBulkConversion.mockResolvedValue({
+        jobs: [{ filename: 'a.pdf', jobId: 'job-a', error: null }],
+        count: 1,
+      });
+      await withHttpServer(app, async (baseUrl) => {
+        const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
+        const form = new FormData();
+        form.append('files', new Blob([pdfBytes], { type: 'application/pdf' }), 'a.pdf');
+        const response = await fetch(`${baseUrl}/api/convert/bulk`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: form,
+        });
+        expect(response.status).toBe(202);
+        expect(mockSubmitBulkConversion).toHaveBeenCalledWith(
+          expect.any(Array), 'user-a', vision,
+        );
+      });
+    });
+
+    it('surfaces the conversion service 422 (scanned, no key) to the client', async () => {
+      const err: any = new Error('rejected');
+      err.response = { status: 422, data: { detail: 'Tài liệu có trang quét (scanned) nhưng chưa có khóa API Google Gemini.' } };
+      mockSubmitConversion.mockRejectedValue(err);
+      await withHttpServer(app, async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/api/convert/`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: pdfForm(),
+        });
+        expect(response.status).toBe(422);
+        const body = await response.json();
+        expect(body.error).toContain('trang quét');
+      });
     });
   });
 

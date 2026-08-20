@@ -119,15 +119,16 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
 
 ```
 ├── backend/
-│   ├── prisma/schema.prisma          # User + PasswordResetToken only (ADR-0001)
+│   ├── prisma/schema.prisma          # User + PasswordResetToken + UserLLMConfig (ADR-0001)
 │   ├── prisma/migrations/            # Single squashed init migration
 │   ├── scripts/
 │   │   └── check_migration_integrity.test.ts  # Locks the squashed baseline
 │   ├── src/
-│   │   ├── index.ts                  # Express server (auth + convert only)
+│   │   ├── index.ts                  # Express server (auth + convert + BYOK settings)
 │   │   ├── routes/
 │   │   │   ├── auth.ts               # Login, register, password reset
 │   │   │   ├── convert.ts            # Submit, status, report, result
+│   │   │   ├── llm-settings.ts       # BYOK vision provider settings (GET/POST/DELETE/test/models)
 │   │   │   └── removed_surfaces.contract.test.ts  # Absence assertions
 │   │   ├── services/
 │   │   │   ├── readiness_service.ts  # Postgres + Redis + conversion only
@@ -145,10 +146,11 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
 │   │   ├── page.tsx                  # Landing
 │   │   ├── (app)/convert/page.tsx    # Convert UI
 │   │   ├── (auth)/                   # Login, signup, forgot, reset
-│   │   └── api/proxy/[...path]/      # Backend proxy (health + convert only)
+│   │   └── api/proxy/[...path]/      # Backend proxy (health + convert + settings/llm)
 │   ├── components/
 │   │   ├── convert/                  # Upload dialog, job cards
 │   │   ├── auth/                     # AuthForm, RequireSession
+│   │   ├── settings/                 # LLMSettingsDialog (BYOK keys, sidebar gear)
 │   │   └── layout/                   # Sidebar, AppShell, Header
 │   ├── lib/
 │   │   ├── convert-api.ts            # Conversion API client
@@ -167,9 +169,9 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
 │   ├── triage/                       # Page classification
 │   ├── rules/                        # Decree-30 rule engine
 │   ├── structuring/                  # JSON structure extraction
-│   ├── vision/                       # Gemini Flash scanned-page OCR
+│   ├── vision/                       # Gemini Flash scanned-page OCR (BYOK key injected per job)
 │   ├── eval/                         # E2E + P0a verification
-│   └── tests/                        # 50 pytest tests
+│   └── tests/                        # 94 pytest tests
 ├── shared/decree30-typography.json   # Single source of Decree-30 typography
 ├── docker-compose.yml                # Standalone stack (8 services)
 ├── init.sql                          # Postgres bootstrap (no extensions)
@@ -193,6 +195,7 @@ DATABASE_URL=postgresql://postgres:password@localhost:5432/ai_docs
 REDIS_URL=redis://localhost:6379
 CONVERSION_SERVICE_URL=http://localhost:8004
 JWT_SECRET=<your-jwt-secret-min-32-chars>
+LLM_CONFIG_ENCRYPTION_KEY=<64-hex-chars>   # AES-256-GCM key for users' BYOK API keys
 
 # Optional
 CORS_ORIGIN=http://localhost:3000
@@ -217,7 +220,8 @@ POSTGRES_USER=postgres
 DB_PASSWORD=<your-password>
 POSTGRES_VOLUME=standalone_postgres_data
 REDIS_VOLUME=standalone_redis_data
-GEMINI_API_KEY=          # Optional: scanned-page vision
+# No GEMINI_API_KEY: scanned-page vision is BYOK — each user stores their own
+# key in the settings dialog; the server holds none.
 ```
 
 ---
@@ -225,13 +229,13 @@ GEMINI_API_KEY=          # Optional: scanned-page vision
 ## Testing
 
 ```powershell
-# Backend tests (Jest) — 24 suites / 198 tests
+# Backend tests (Jest) — 28 suites / 254 tests
 cd backend && npm test
 
-# Frontend tests (Vitest) — 21 files / 184 tests
+# Frontend tests (Vitest) — 23 files / 199 tests
 cd frontend && npm test -- --run
 
-# Conversion service tests (pytest) — 50 tests
+# Conversion service tests (pytest) — 94 tests
 cd conversion-service
 .venv\Scripts\python.exe -m pytest
 
@@ -268,6 +272,14 @@ Five jobs in `.github/workflows/ci.yml`:
 - **Quota refund** uses a Redis SET NX EX dedup flag to prevent double-refund.
 - **BRPOPLPUSH** moves jobs to a processing list; startup reclaim re-enqueues
   any jobs left there after a crash.
+- **BYOK vision keys transit the Redis job payload** (`vision` JSON field) on
+  the private compose network — accepted tradeoff. The key must never be
+  logged, echoed in job status/report, or returned by the settings GET.
+- **Scanned PDF + no Gemini key → 422 before quota** (Vietnamese instructions,
+  deep-link button "Cấu hình khóa API" opens the settings dialog via the
+  `open-llm-settings` window event). OpenRouter-only users get the same 422 —
+  only Gemini is wired to vision; OpenRouter is stored for future Q&A.
+- **Backend has no `typecheck` script** — use `npm run build` (tsc).
 
 ---
 

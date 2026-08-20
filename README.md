@@ -33,6 +33,12 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
   worker consumes them. FastAPI deduplicates nothing — the worker owns all jobs.
 - **Daily quota**: 20 docs/user/day (config `DEFAULT_DAILY_LIMIT`), charged only
   after PDF validation passes.
+- **BYOK scanned-page vision**: the server holds no Gemini key. Each user stores
+  their own Google Gemini key in the settings dialog (gear icon in the sidebar);
+  the backend keeps it AES-256-GCM encrypted and attaches it to the conversion
+  job. A scanned upload with no key is rejected up front (422, Vietnamese
+  instructions) and costs no quota. OpenRouter keys can be stored too but are
+  reserved for the future Q&A feature — only Gemini is wired to vision today.
 - Docling / embeddings / document-renderer are **not** part of this project — the
   `/api/convert` path never touches them (backend `/health` may report degraded;
   that's expected here).
@@ -68,8 +74,9 @@ docker compose up -d
 
 Secrets live in `.env` and `backend/.env` (both gitignored, already generated).
 Rotate for any non-local deployment. The backend refuses to boot without
-`DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, and `CONVERSION_SERVICE_URL`
-(see `backend/.env.example` for the full contract).
+`DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `CONVERSION_SERVICE_URL`, and
+`LLM_CONFIG_ENCRYPTION_KEY` (64 hex chars — encrypts users' BYOK API keys;
+see `backend/.env.example` for the full contract).
 
 ### Frontend development (optional, hot reload)
 
@@ -134,13 +141,13 @@ the new backend port.
 cd conversion-service
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
-.venv\Scripts\python.exe -m pytest          # 50 tests
+.venv\Scripts\python.exe -m pytest          # 94 tests
 
 cd ..\backend
-npm install && npm test                     # 198 tests
+npm install && npm test                     # 254 tests
 
 cd ..\frontend
-npm install && npm test                     # 184 tests
+npm install && npm test                     # 199 tests
 ```
 
 Fixture seals are generated artifacts (gitignored). Regenerate before running
@@ -163,11 +170,20 @@ $env:E2E_REDIS='redis://127.0.0.1:6379'
 .venv\Scripts\python.exe eval\_live_stack_e2e.py
 ```
 
+The E2E always verifies the BYOK admission gate (scanned upload with no stored
+key → 422, no quota). To also run the fully-real vision path — store a real
+Gemini key through the backend, convert a scanned PDF, and download the DOCX —
+set `$env:E2E_GEMINI_API_KEY` before running the script.
+
 ## Certification status
 
-Phase P1 (Gemini scanned-PDF vision) is implemented but requires
-`GEMINI_API_KEY` + a scanned-PDF corpus to certify; the digital-text path is
-fully certified (P0a gate). Every requirement of the Decree-30 constraints
-(LLM never formats; validated JSON contracts; rule engine applies styling) is
-enforced in code + tests. See `conversion-service/README.md` for phase status
-and `conversion-service/CUTOVER_CHECKLIST.md` for the production checklist.
+Phase P1 (Gemini scanned-PDF vision) is implemented as BYOK: the wiring is
+unit-tested end to end (real scanned PDF → injected key → re-opened Decree-30
+DOCX in `tests/test_vision_wiring.py`), and the live gate
+(`eval/_live_stack_e2e.py` with `E2E_GEMINI_API_KEY`) covers the real-key path.
+Certifying transcription quality still needs a scanned-PDF corpus + a user's
+real key; the digital-text path is fully certified (P0a gate). Every requirement
+of the Decree-30 constraints (LLM never formats; validated JSON contracts; rule
+engine applies styling) is enforced in code + tests. See
+`conversion-service/README.md` for phase status and
+`conversion-service/CUTOVER_CHECKLIST.md` for the production checklist.

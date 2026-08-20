@@ -91,9 +91,69 @@ def _extract_text_page_lines(page, page_number: int) -> list[LineInfo]:
     return lines
 
 
+def _run_scanned_vision(vision: dict, pdf_path: str,
+                        scanned_pages: list[int]) -> tuple[list[Block], list[int], list[str]]:
+    """Transcribe scanned pages with the user's injected Gemini key (BYOK).
+
+    Returns (blocks, degraded_pages, warnings). Batches whose result is
+    missing or fails validation degrade their pages with a warning — the
+    degrade-don't-drop guarantee survives a bad batch. A rejected API key
+    raises VisionAuthError, which the caller lets propagate (fail-fast).
+    """
+    import asyncio as _asyncio
+
+    from vision.gemini_contract import (
+        GeminiVisionClient,
+        convert_scanned_pages_parallel,
+        plan_batches,
+    )
+
+    client = GeminiVisionClient(api_key=vision["apiKey"], model=vision.get("model"))
+    pdf_bytes = Path(pdf_path).read_bytes()
+    batches = plan_batches(scanned_pages)
+    results = _asyncio.run(
+        convert_scanned_pages_parallel(client, pdf_bytes, scanned_pages)
+    )
+
+    blocks: list[Block] = []
+    degraded: list[int] = []
+    warnings: list[str] = []
+    scanned_set = set(scanned_pages)
+    for (first, last), raw in zip(batches, results):
+        batch_pages = [p for p in range(first, last + 1) if p in scanned_set]
+        if raw is None:
+            degraded.extend(batch_pages)
+            warnings.append(
+                f"pages {first}-{last}: Gemini vision returned no usable result"
+            )
+            continue
+        result = validate_chunk(raw)
+        if not result.ok:
+            degraded.extend(batch_pages)
+            warnings.append(
+                f"pages {first}-{last}: Gemini vision output failed validation "
+                f"({result.error_text()})"
+            )
+            continue
+        for b in result.blocks:
+            if getattr(b, "page", None) is None:
+                b.page = first
+            # Scanned extraction is capped even on a confident transcription.
+            b.confidence = min(b.confidence, config.SCANNED_CONFIDENCE_CAP)
+            blocks.append(b)
+    return blocks, degraded, warnings
+
+
 def convert_pdf(pdf_path: str, out_path: str,
-                media_dir: Optional[str] = None) -> tuple[str, ConversionReport]:
-    """Convert one PDF to DOCX. Returns (docx_path, report)."""
+                media_dir: Optional[str] = None,
+                vision: Optional[dict] = None) -> tuple[str, ConversionReport]:
+    """Convert one PDF to DOCX. Returns (docx_path, report).
+
+    vision: optional BYOK Gemini config {"provider", "model", "apiKey"}
+    injected from the submitting user's stored settings. Without it, scanned
+    pages degrade with warnings (the admission gate in main.py already rejects
+    scanned uploads that lack a key, so this path is defense in depth).
+    """
     report = ConversionReport()
     t0 = time.time()
 
@@ -106,6 +166,7 @@ def convert_pdf(pdf_path: str, out_path: str,
         all_blocks: list[Block] = []
         page_index_map: dict[int, int] = {}
         sig_candidates: dict[int, Block] = {}
+        scanned_pages: list[int] = []
         classifier = Classifier()
 
         # 2. Triage + 3. Extract/Structure (per page)
@@ -157,12 +218,29 @@ def convert_pdf(pdf_path: str, out_path: str,
                         b.page = page_no
                 all_blocks.extend(blocks)
             else:  # SCANNED
-                # Gemini vision contract (P1). Without an API key we degrade
-                # gracefully: mark the page degraded, never silently drop it.
-                report.degraded_pages.append(page_no)
-                report.warnings.append(
-                    f"page {page_no}: scanned page requires Gemini vision (not configured)"
+                # Gemini vision contract (P1). Collected here, transcribed in
+                # one batched pass after the loop when the user injected a
+                # BYOK key; without one the page degrades (never silently
+                # dropped). main.py's admission gate already rejects scanned
+                # uploads lacking a key, so the no-vision path is a backstop.
+                scanned_pages.append(page_no)
+
+        if scanned_pages:
+            if vision:
+                t_vision = time.time()
+                v_blocks, v_degraded, v_warnings = _run_scanned_vision(
+                    vision, pdf_path, scanned_pages
                 )
+                report.timings["vision_s"] = time.time() - t_vision
+                all_blocks.extend(v_blocks)
+                report.degraded_pages.extend(v_degraded)
+                report.warnings.extend(v_warnings)
+            else:
+                for page_no in scanned_pages:
+                    report.degraded_pages.append(page_no)
+                    report.warnings.append(
+                        f"page {page_no}: scanned page requires Gemini vision (not configured)"
+                    )
 
         # Emit the signature block from the LAST page that carried one —
         # Decree-30 documents sign at the end; bottom zones on earlier pages
@@ -193,6 +271,12 @@ def convert_pdf(pdf_path: str, out_path: str,
         report.output_chars = _content_chars(all_blocks)
         if report.extracted_chars > 0:
             report.coverage = min(1.0, report.output_chars / report.extracted_chars)
+        elif report.output_chars > 0:
+            # Vision-produced content on a document with no text layer (fully
+            # scanned): there is nothing to compare against, so coverage is not
+            # a meaningful signal. Confidence still rides the (capped) block
+            # average below — never a default 1.0.
+            report.coverage = 1.0
         else:
             report.coverage = 0.0
 

@@ -2,6 +2,7 @@ import { getPasswordResetMode } from './password_reset_mode';
 
 const REQUIRED = [
   'DATABASE_URL', 'REDIS_URL', 'JWT_SECRET', 'CONVERSION_SERVICE_URL',
+  'LLM_CONFIG_ENCRYPTION_KEY',
 ] as const;
 
 const DEV_DEFAULTS = new Set([
@@ -97,6 +98,13 @@ export function validateEnv(): void {
   const jwtSecret = process.env.JWT_SECRET!;
   if (jwtSecret.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
   if (isProd && DEV_DEFAULTS.has(jwtSecret)) throw new Error('JWT_SECRET is a known dev default');
+
+  // BYOK vision provider keys are stored AES-256-GCM encrypted; the backend
+  // refuses to boot without the 32-byte encryption key they are wrapped with.
+  const llmKey = process.env.LLM_CONFIG_ENCRYPTION_KEY!;
+  if (!/^[0-9a-fA-F]{64}$/.test(llmKey)) {
+    throw new Error('LLM_CONFIG_ENCRYPTION_KEY must be 32 bytes (64 hex chars) for AES-256');
+  }
 
   validateUrl('DATABASE_URL', ['postgres:', 'postgresql:'], true);
   validateUrl('REDIS_URL', ['redis:', 'rediss:'], true);

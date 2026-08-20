@@ -5,12 +5,14 @@ Run before cutover:  python eval/preflight.py [--url http://127.0.0.1:8004]
 Checks (each PASS/WARN/FAIL):
   1. Service /health reachable, queue mode as expected
   2. Redis reachable (queue mode) — WARN if in-memory fallback
-  3. GEMINI_API_KEY present — WARN if absent (scanned pages degrade)
-  4. Typography JSON loads and matches schema expectations
-  5. TS ROLE_RULES sync (scripts/check_typography_sync.py logic)
-  6. Work/output/media dirs writable
-  7. Quota config sane (limit > 0)
-  8. Failure-rate alert not currently firing
+  3. Typography JSON loads and matches schema expectations
+  4. TS ROLE_RULES sync (scripts/check_typography_sync.py logic)
+  5. Work/output/media dirs writable
+  6. Quota config sane (limit > 0)
+  7. Failure-rate alert not currently firing
+
+Note: scanned-page vision is BYOK — each user configures their own Gemini key
+in the app's settings dialog, so there is no server-side key to preflight.
 
 Exit code 0 when no FAILs (WARNs allowed); 1 otherwise.
 """
@@ -57,13 +59,6 @@ def check_redis() -> None:
         record("redis reachable", PASS)
     except Exception as e:  # noqa: BLE001
         record("redis reachable", WARN, f"in-memory fallback active ({e})")
-
-
-def check_gemini_key() -> None:
-    if os.environ.get("GEMINI_API_KEY"):
-        record("GEMINI_API_KEY", PASS, "set")
-    else:
-        record("GEMINI_API_KEY", WARN, "absent — scanned pages degrade to warnings")
 
 
 def check_typography() -> None:
@@ -139,7 +134,6 @@ def main() -> int:
 
     check_health(args.url)
     check_redis()
-    check_gemini_key()
     check_typography()
     check_ts_sync()
     check_dirs()

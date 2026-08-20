@@ -28,11 +28,24 @@ export interface ConversionJobStatus {
   userId?: string | null;
 }
 
+/**
+ * BYOK vision attachment for a conversion job. Present only when the caller
+ * has a usable Gemini config (see llm_config_service.getVisionConfig). The
+ * key transits the private backend→conversion network inside the job payload
+ * and is never logged or echoed back.
+ */
+export interface VisionJobConfig {
+  provider: string;
+  model: string;
+  apiKey: string;
+}
+
 /** Submit a PDF (on disk) for conversion. Returns the service jobId. */
 export async function submitConversion(
   pdfPath: string,
   filename: string,
   userId: string,
+  vision?: VisionJobConfig | null,
 ): Promise<{ jobId: string; mode: string }> {
   const buffer = await fs.promises.readFile(pdfPath);
   const formData = new FormData();
@@ -41,6 +54,7 @@ export async function submitConversion(
     new Blob([new Uint8Array(buffer)], { type: 'application/pdf' }),
     filename,
   );
+  if (vision) formData.append('vision', JSON.stringify(vision));
 
   const response = await conversionBreaker.execute(() =>
     axios.post(`${CONVERSION_URL}/convert`, formData, {
@@ -93,6 +107,7 @@ export async function getConversionReport(jobId: string): Promise<ConversionRepo
 export async function submitBulkConversion(
   files: Array<{ path: string; name: string }>,
   userId: string,
+  vision?: VisionJobConfig | null,
 ): Promise<{ jobs: Array<{ filename: string; jobId: string | null; error: string | null }>; count: number }> {
   const formData = new FormData();
   for (const file of files) {
@@ -103,6 +118,7 @@ export async function submitBulkConversion(
       file.name,
     );
   }
+  if (vision) formData.append('vision', JSON.stringify(vision));
   const response = await conversionBreaker.execute(() =>
     axios.post(`${CONVERSION_URL}/convert/bulk`, formData, {
       timeout: CONVERT_TIMEOUT_MS,

@@ -1,5 +1,6 @@
-// Standalone conversion product — auth-only schema (ADR-0001).
-// The master stack's eleven models were squashed to the two this product uses.
+// Standalone conversion product — auth + per-user vision provider config (ADR-0001).
+// The master stack's eleven models were squashed to the three this product uses:
+// the two auth models plus UserLLMConfig (BYOK vision provider settings).
 
 generator client {
   provider = "prisma-client-js"
@@ -23,6 +24,7 @@ model User {
   updatedAt      DateTime @updatedAt
 
   resetTokens PasswordResetToken[]
+  llmConfig   UserLLMConfig?
 
   @@index([username])
   @@index([role])
@@ -39,4 +41,24 @@ model PasswordResetToken {
 
   @@index([userId, createdAt])
   @@index([expiresAt])
+}
+
+// Per-user vision provider config (BYOK). The user brings their own API key;
+// the server never provides one. Providers: openrouter | gemini. The key is
+// stored AES-256-GCM encrypted (LLM_CONFIG_ENCRYPTION_KEY) and is only ever
+// decrypted server-side to attach to a conversion job the user submits.
+model UserLLMConfig {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider        String // openrouter | gemini
+  baseUrl         String
+  model           String
+  encryptedApiKey String @db.Text
+  apiKeyIv        String @db.Text
+  apiKeyAuthTag   String @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

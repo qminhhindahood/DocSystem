@@ -40,10 +40,15 @@ pages degrade or page 1 fails).
 
 ## Environment variables
 
+Scanned-page vision is **BYOK**: the backend attaches the submitting user's own
+Gemini key as a `vision` JSON form field on `/convert` and `/convert/bulk`
+(`{"provider":"gemini","model":...,"apiKey":...}`). The server holds no
+vision key; a scanned upload without one is rejected up front (422) before
+quota is charged.
+
 | Variable | Default | Purpose |
 |---|---|---|
-| `GEMINI_API_KEY` | — | Gemini Flash API key (scanned pages). Never hardcoded, never logged. |
-| `CONVERSION_GEMINI_MODEL` | `gemini-2.5-flash` | Vision model |
+| `CONVERSION_GEMINI_MODEL` | `gemini-2.5-flash` | Default vision model when the job payload does not name one |
 | `CONVERSION_GEMINI_PARALLEL` | `4` | Parallel Gemini batch calls (4–8) |
 | `CONVERSION_PORT` | `8004` | HTTP port |
 | `CONVERSION_WORK_DIR` | `./work` | Uploads/outputs/media root |
@@ -121,7 +126,9 @@ conversion-service/
   `GET /convert/{jobId}/report` (flagged blocks < 0.6, low-confidence pages
   < 0.7, demotions) with a review panel in the UI, bulk conversion
   `POST /convert/bulk` (≤ 10 files, per-file errors) + multi-file upload
-  dialog, Gemini Batch API module (`vision/batch_api.py`) for bulk scanned
-  jobs, production preflight (`eval/preflight.py`) and
-  `CUTOVER_CHECKLIST.md`. Python 46/46, backend 659/659, frontend 320/320,
-  P0a gate 57/57, live E2E (report + bulk + metrics) pass.
+  dialog, production preflight (`eval/preflight.py`) and
+  `CUTOVER_CHECKLIST.md`.
+- **BYOK vision:** ✅ implemented — per-user Gemini key settings (backend
+  stores them AES-256-GCM encrypted), upfront 422 rejection of scanned uploads
+  without a key, scanned pages transcribed through `vision/gemini_contract.py`
+  with the injected key, fail-fast + quota refund when the key is rejected.

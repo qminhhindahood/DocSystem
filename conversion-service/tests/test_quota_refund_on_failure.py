@@ -76,7 +76,7 @@ def test_worker_refunds_quota_on_failed_conversion(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         worker, "convert_pdf",
-        lambda pdf_path, out_path, media_dir: (out_path, _FailedReport()),
+        lambda pdf_path, out_path, media_dir, vision=None: (out_path, _FailedReport()),
     )
 
     assert quota.check_and_increment("u9")[0] is True  # charged on submit

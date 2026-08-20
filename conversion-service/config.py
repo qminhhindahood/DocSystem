@@ -43,15 +43,13 @@ HEADER_ZONE_RATIO = 0.25            # top ~25% -> admin_header zone
 SIGNATURE_ZONE_RATIO = 0.25         # bottom ~25% -> signature zone
 
 # ─── Gemini vision (plan §6) ──────────────────────────────────────────────────
+# BYOK: the API key is injected per job from the submitting user's stored
+# config — the server holds no vision key (no GEMINI_API_KEY env var).
 GEMINI_MODEL = os.environ.get("CONVERSION_GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_BATCH_PAGES = 8              # up to 8 pages per call
 GEMINI_PARALLEL_CALLS = int(os.environ.get("CONVERSION_GEMINI_PARALLEL", "4"))  # 4-8
 GEMINI_TEMPERATURE = 0.0            # transcription must be deterministic
 GEMINI_TIMEOUT_S = float(os.environ.get("CONVERSION_GEMINI_TIMEOUT_S", "120"))
-
-def gemini_api_key() -> str | None:
-    """Gemini key from env only. Never hardcoded, never logged."""
-    return os.environ.get("GEMINI_API_KEY")
 
 # ─── Confidence (plan §10) ────────────────────────────────────────────────────
 BLOCK_REVIEW_THRESHOLD = 0.6        # block < 0.6 -> flag for review

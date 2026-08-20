@@ -52,7 +52,6 @@ services:
       - "127.0.0.1:${CONVERSION_PORT:-8004}:8004"
     environment:
       REDIS_URL: redis://redis:6379
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       CONVERSION_WORK_DIR: /app/work
     volumes:
       - conversion_work:/app/work
@@ -81,7 +80,6 @@ services:
       disable: true
     environment:
       REDIS_URL: redis://redis:6379
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       CONVERSION_WORK_DIR: /app/work
     volumes:
       - conversion_work:/app/work

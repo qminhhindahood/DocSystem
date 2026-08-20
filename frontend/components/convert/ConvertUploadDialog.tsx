@@ -3,7 +3,8 @@
 import React, { useState, useRef, useCallback } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '@/components/ui/button';
-import { AuthError, submitConversion, submitBulkConversion } from '@/lib/convert-api';
+import { ApiError, AuthError, submitConversion, submitBulkConversion } from '@/lib/convert-api';
+import { OPEN_LLM_SETTINGS_EVENT } from '@/components/settings/LLMSettingsDialog';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Upload, X, FileText } from 'lucide-react';
 
@@ -28,11 +29,13 @@ export function ConvertUploadDialog({ open, onOpenChange, onSubmitted }: Convert
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsVisionConfig, setNeedsVisionConfig] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
   const reset = useCallback(() => {
     setFiles([]);
     setError(null);
+    setNeedsVisionConfig(false);
     setUploading(false);
   }, []);
 
@@ -69,9 +72,11 @@ export function ConvertUploadDialog({ open, onOpenChange, onSubmitted }: Convert
     if (files.length === 0) return;
     setUploading(true);
     setError(null);
+    let visionNeeded = false;
     try {
       const submitted = files;
       let jobs: SubmittedJob[] = [];
+      let failedNames: Set<string> | null = null;
       const first = submitted[0];
       if (submitted.length === 1 && first) {
         const { jobId } = await submitConversion(first);
@@ -87,7 +92,21 @@ export function ConvertUploadDialog({ open, onOpenChange, onSubmitted }: Convert
         const failed = result.jobs.filter((j) => j.error);
         if (failed.length > 0) {
           setError(failed.map((f) => `${f.filename}: ${f.error}`).join('; '));
+          failedNames = new Set(failed.map((f) => f.filename));
+          // Bulk surfaces the scanned-no-key case as an inline per-file error.
+          if (failed.some((f) => f.error && f.error.includes('trang quét'))) {
+            visionNeeded = true;
+          }
         }
+      }
+      if (visionNeeded) {
+        // Keep the dialog open so the deep-link button stays reachable.
+        // Successful jobs are still tracked; only failed files remain for retry.
+        setNeedsVisionConfig(true);
+        const keep = failedNames;
+        if (keep) setFiles((prev) => prev.filter((f) => keep.has(f.name)));
+        if (jobs.length > 0) onSubmitted(jobs);
+        return;
       }
       reset();
       onOpenChange(false);
@@ -95,6 +114,8 @@ export function ConvertUploadDialog({ open, onOpenChange, onSubmitted }: Convert
     } catch (err) {
       if (err instanceof AuthError) { auth.refresh(); return; }
       setError(err instanceof Error ? err.message : 'Chuyển đổi thất bại');
+      // Single upload: the admission gate rejects scanned-without-key as 422.
+      if (err instanceof ApiError && err.status === 422) setNeedsVisionConfig(true);
     } finally {
       setUploading(false);
     }
@@ -157,9 +178,20 @@ export function ConvertUploadDialog({ open, onOpenChange, onSubmitted }: Convert
             </div>
 
             {error && (
-              <p role="alert" className="whitespace-pre-line rounded-control bg-danger/10 px-3 py-2 text-body text-danger">
-                {error}
-              </p>
+              <div role="alert" className="whitespace-pre-line rounded-control bg-danger/10 px-3 py-2 text-body text-danger">
+                <p>{error}</p>
+                {needsVisionConfig && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => window.dispatchEvent(new CustomEvent(OPEN_LLM_SETTINGS_EVENT))}
+                  >
+                    Cấu hình khóa API
+                  </Button>
+                )}
+              </div>
             )}
 
             <div className="flex justify-end gap-2">

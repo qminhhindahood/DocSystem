@@ -27,9 +27,18 @@ describe('removed master-stack frontend surfaces (standalone prune, ticket 06)',
     'components/analytics',
     'components/documents',
     'components/feature',
-    'components/settings',
     'components/templates',
   ])('component %s is deleted', (component) => {
+    expect(exists(component)).toBe(false);
+  });
+
+  it.each([
+    // BYOK settings were re-added (dialog only); the master-stack settings
+    // surfaces stay dead.
+    'components/settings/DocumentDefaultsForm.tsx',
+    'components/settings/DocumentProfileForm.tsx',
+    'components/settings/LLMSettingsForm.tsx',
+  ])('dead master settings surface %s stays deleted', (component) => {
     expect(exists(component)).toBe(false);
   });
 
@@ -37,8 +46,6 @@ describe('removed master-stack frontend surfaces (standalone prune, ticket 06)',
     'lib/api.ts',
     'lib/analytics.ts',
     'lib/document-types.ts',
-    'lib/llm-providers.ts',
-    'lib/settings-api.ts',
     'lib/sse.ts',
     'lib/templates-api.ts',
     'lib/use-debounced-value.ts',
@@ -65,12 +72,15 @@ describe('removed master-stack frontend surfaces (standalone prune, ticket 06)',
     }
   });
 
-  it('the proxy allowlist permits only health and convert paths', () => {
+  it('the proxy allowlist permits only health, convert, and BYOK settings paths', () => {
     const proxy = read('app/api/proxy/[...path]/route.ts');
     expect(proxy).toContain('/^convert$/');
     expect(proxy).toContain('/^convert\\/bulk$/');
-    for (const dead of ['workflow', 'feedback', 'rag', 'qa', 'documents', 'templates', 'settings']) {
+    expect(proxy).toContain('/^settings\\/llm$/');
+    for (const dead of ['workflow', 'feedback', 'rag', 'qa', 'documents', 'templates']) {
       expect(proxy).not.toMatch(new RegExp(`pattern: /\\^${dead}`));
     }
+    // Only the llm settings subtree is proxied — no document-profile etc.
+    expect(proxy).not.toContain('settings\\/document-profile');
   });
 });

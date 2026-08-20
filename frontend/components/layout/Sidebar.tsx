@@ -7,6 +7,7 @@ import { cn } from '@/components/lib/cn';
 import { NAV_ROUTES } from '@/lib/constants/routes';
 import { useTheme } from '@/lib/theme';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { LLMSettingsDialog } from '@/components/settings/LLMSettingsDialog';
 import {
   FileOutput,
   X,
@@ -159,6 +160,7 @@ export function Sidebar({ open, onOpenChange, triggerRef, className }: SidebarPr
 
           {/* Footer utilities */}
           <div className="flex-shrink-0 space-y-1 border-t border-hairline p-3">
+            <LLMSettingsDialog />
             {/* Visible text carries the accessible name (WCAG 2.5.3); the icon shows
                 which theme the control switches to. */}
             <button type="button" onClick={toggle} className={utilityClass}>

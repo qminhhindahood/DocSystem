@@ -35,6 +35,10 @@ and keeps the document task, not infrastructure, at the center.
   are shown instead, and warnings never hide a structurally valid file.
 - No silent drops: a scanned page that cannot be converted is reported as
   degraded, never skipped quietly.
+- No server-held vision keys: scanned-page transcription is BYOK. Users bring
+  their own Google Gemini key in the settings dialog; without one, a scanned
+  upload is rejected up front with clear Vietnamese instructions instead of
+  silently degrading, and it costs no quota.
 
 ## Design Principles
 
@@ -43,8 +47,10 @@ and keeps the document task, not infrastructure, at the center.
 - Preserve user control: warnings inform; the converted file stays downloadable.
 - Treat privacy and owner scope as visible product behavior — a job id is
   never enough to read someone else's document.
-- Failures cost nothing: invalid uploads and failed conversions never consume
-  the daily quota.
+- Failures cost nothing: invalid uploads, rejected scanned uploads, and failed
+  conversions never consume the daily quota.
+- Keys belong to their owner: a user's API key is stored encrypted for that
+  account alone, is never echoed back, and never appears in logs or reports.
 
 ## Accessibility & Inclusion
 

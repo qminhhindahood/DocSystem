@@ -1,4 +1,4 @@
--- Standalone conversion product: auth-only init (ADR-0001).
+-- Standalone conversion product: auth + vision provider config init (ADR-0001).
 -- This single migration replaces the master stack's sixteen-migration history.
 
 -- CreateTable
@@ -28,6 +28,22 @@ CREATE TABLE "PasswordResetToken" (
     CONSTRAINT "PasswordResetToken_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "UserLLMConfig" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "provider" TEXT NOT NULL,
+    "baseUrl" TEXT NOT NULL,
+    "model" TEXT NOT NULL,
+    "encryptedApiKey" TEXT NOT NULL,
+    "apiKeyIv" TEXT NOT NULL,
+    "apiKeyAuthTag" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "UserLLMConfig_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "User_username_key" ON "User"("username");
 
@@ -49,5 +65,11 @@ CREATE INDEX "PasswordResetToken_userId_createdAt_idx" ON "PasswordResetToken"("
 -- CreateIndex
 CREATE INDEX "PasswordResetToken_expiresAt_idx" ON "PasswordResetToken"("expiresAt");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "UserLLMConfig_userId_key" ON "UserLLMConfig"("userId");
+
 -- AddForeignKey
 ALTER TABLE "PasswordResetToken" ADD CONSTRAINT "PasswordResetToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "UserLLMConfig" ADD CONSTRAINT "UserLLMConfig_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

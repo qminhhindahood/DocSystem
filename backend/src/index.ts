@@ -7,6 +7,7 @@ import { fastTimeout } from './middleware/timeout';
 import { errorHandler } from './middleware/errorHandler';
 import authRoutes from './routes/auth';
 import convertRoutes from './routes/convert';
+import llmSettingsRoutes from './routes/llm-settings';
 import { prisma, disconnectPrisma } from './utils/prisma';
 import { redisClient } from './utils/redis';
 import { validateEnv } from './utils/validateEnv';
@@ -96,6 +97,7 @@ app.get('/api', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/convert', convertRoutes);
+app.use('/api/settings/llm', llmSettingsRoutes);
 
 app.use(errorHandler);
 

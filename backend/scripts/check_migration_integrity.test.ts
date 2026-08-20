@@ -7,8 +7,8 @@ const migrationsRoot = join(backendRoot, 'prisma', 'migrations');
 
 const read = (...segments: string[]) => readFileSync(join(...segments), 'utf8');
 
-describe('squashed auth-only migration baseline (ADR-0001)', () => {
-  it('contains exactly one migration creating only User and PasswordResetToken', () => {
+describe('squashed standalone migration baseline (ADR-0001)', () => {
+  it('contains exactly one migration creating only User, PasswordResetToken, and UserLLMConfig', () => {
     const migrations = readdirSync(migrationsRoot, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
@@ -18,19 +18,19 @@ describe('squashed auth-only migration baseline (ADR-0001)', () => {
 
     const sql = read(migrationsRoot, migrations[0], 'migration.sql');
     const tables = [...sql.matchAll(/CREATE TABLE "(\w+)"/g)].map((m) => m[1]).sort();
-    expect(tables).toEqual(['PasswordResetToken', 'User']);
+    expect(tables).toEqual(['PasswordResetToken', 'User', 'UserLLMConfig']);
 
-    for (const dead of ['Document', 'Chunk', 'Feedback', 'Template', 'IngestionJob', 'TrainingJob', 'ModelVersion', 'UserLLMConfig', 'UserDocumentProfile']) {
+    for (const dead of ['Document', 'Chunk', 'Feedback', 'Template', 'IngestionJob', 'TrainingJob', 'ModelVersion', 'UserDocumentProfile']) {
       expect(sql).not.toContain(`"${dead}"`);
     }
     expect(sql).not.toMatch(/vector/i);
   });
 
-  it('schema.prisma defines only the two auth models and no pgvector extension', () => {
+  it('schema.prisma defines only the three standalone models and no pgvector extension', () => {
     const schema = read(backendRoot, 'prisma', 'schema.prisma');
     const models = [...schema.matchAll(/^model\s+(\w+)\s+{/gm)].map((m) => m[1]).sort();
 
-    expect(models).toEqual(['PasswordResetToken', 'User']);
+    expect(models).toEqual(['PasswordResetToken', 'User', 'UserLLMConfig']);
     expect(schema).not.toContain('extensions');
     expect(schema).not.toContain('vector');
     expect(schema).not.toContain('postgresqlExtensions');

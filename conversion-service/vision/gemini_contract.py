@@ -15,6 +15,14 @@ from typing import Any, Optional
 
 import config
 
+
+class VisionAuthError(RuntimeError):
+    """The vision provider rejected the user's API key (401/403/invalid key).
+
+    Raised so the worker can fail the job fast with a clear message and refund
+    quota, instead of degrading page by page into a vague failure.
+    """
+
 # ─── §6.2 System prompt (shippable text — do not freestyle) ───────────────────
 
 SYSTEM_PROMPT = """You are a transcription engine for Vietnamese administrative documents
@@ -141,24 +149,47 @@ RESPONSE_SCHEMA: dict[str, Any] = {"type": "ARRAY", "items": BLOCK_SCHEMA}
 
 # ─── Client ───────────────────────────────────────────────────────────────────
 
+def _is_auth_failure(exc: BaseException) -> bool:
+    """True when a provider exception is an API-key rejection (401/403).
+
+    google-genai raises errors.APIError with an HTTP .code; older/other paths
+    surface the status or a marker string in the message. Match defensively —
+    a false negative merely degrades to the generic failure path.
+    """
+    code = getattr(exc, "code", None)
+    if code in (401, 403):
+        return True
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    if status in (401, 403):
+        return True
+    message = str(exc).lower()
+    return any(marker in message for marker in (
+        "api key not valid", "api_key_invalid", "api key expired",
+        "invalid api key", "permission denied", "unauthenticated",
+        "status code 401", "status code 403",
+        " 401 unauthorized", " 403 forbidden",
+    ))
+
+
 class GeminiVisionClient:
     """Thin wrapper around google-genai for the scanned-page contract.
 
-    The SDK is imported lazily so the service (and its tests) run without
-    google-genai installed or a GEMINI_API_KEY configured.
+    BYOK: the API key is ALWAYS injected from the submitting user's stored
+    config — the server holds no vision key. The SDK is imported lazily so
+    the service (and its tests) run without google-genai installed.
     """
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
-        self.api_key = api_key or config.gemini_api_key()
+    def __init__(self, api_key: str, model: Optional[str] = None):
+        if not api_key:
+            raise RuntimeError(
+                "a Gemini API key must be injected from the user's vision config"
+            )
+        self.api_key = api_key
         self.model = model or config.GEMINI_MODEL
         self._client = None
 
     def _get_client(self):
         if self._client is None:
-            if not self.api_key:
-                raise RuntimeError(
-                    "GEMINI_API_KEY is not configured — scanned pages cannot be processed"
-                )
             from google import genai  # lazy import
             self._client = genai.Client(api_key=self.api_key)
         return self._client
@@ -168,19 +199,28 @@ class GeminiVisionClient:
         from google.genai import types
 
         client = self._get_client()
-        return client.models.generate_content(
-            model=self.model,
-            contents=[
-                types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
-                USER_PROMPT_TEMPLATE.format(first=first_page, last=last_page),
-            ],
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,          # §6.2
-                response_mime_type="application/json",
-                response_schema=RESPONSE_SCHEMA,
-                temperature=config.GEMINI_TEMPERATURE,     # 0.0 — deterministic
-            ),
-        )
+        try:
+            return client.models.generate_content(
+                model=self.model,
+                contents=[
+                    types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+                    USER_PROMPT_TEMPLATE.format(first=first_page, last=last_page),
+                ],
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,          # §6.2
+                    response_mime_type="application/json",
+                    response_schema=RESPONSE_SCHEMA,
+                    temperature=config.GEMINI_TEMPERATURE,     # 0.0 — deterministic
+                ),
+            )
+        except VisionAuthError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — map provider auth failures
+            if _is_auth_failure(exc):
+                raise VisionAuthError(
+                    "Gemini rejected the provided API key"
+                ) from exc
+            raise
 
     def extract_batch_json(self, pdf_bytes: bytes, first_page: int, last_page: int) -> Any:
         """Call + parse the JSON text into raw block dicts (pre-validation)."""

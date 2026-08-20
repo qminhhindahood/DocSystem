@@ -11,12 +11,13 @@ describe('backend boot wiring (standalone conversion product)', () => {
     expect(source).not.toContain('createDefaultTemplateCompilationWorker');
   });
 
-  it('mounts only the auth and convert route surfaces', () => {
+  it('mounts only the auth, convert, and BYOK settings route surfaces', () => {
     const source = fs.readFileSync(path.join(__dirname, 'index.ts'), 'utf8');
 
     expect(source).toContain("app.use('/api/auth', authRoutes)");
     expect(source).toContain("app.use('/api/convert', convertRoutes)");
-    for (const dead of ['qaRoutes', 'ragRoutes', 'workflowRoutes', 'templateRoutes', 'feedbackRoutes', 'llmSettingsRoutes', 'documentsRoutes', 'documentProfileRoutes']) {
+    expect(source).toContain("app.use('/api/settings/llm', llmSettingsRoutes)");
+    for (const dead of ['qaRoutes', 'ragRoutes', 'workflowRoutes', 'templateRoutes', 'feedbackRoutes', 'documentsRoutes', 'documentProfileRoutes']) {
       expect(source).not.toContain(dead);
     }
   });

@@ -11,6 +11,7 @@ describe('validateEnv configuration (standalone stack)', () => {
     REDIS_URL: 'redis://redis',
     JWT_SECRET: 'x'.repeat(32),
     CONVERSION_SERVICE_URL: 'http://conversion:8004',
+    LLM_CONFIG_ENCRYPTION_KEY: 'ab'.repeat(32),
     SMTP_HOST: 'smtp.example.com',
     SMTP_PORT: '587',
     SMTP_FROM: 'DocAI <no-reply@example.com>',
@@ -56,6 +57,23 @@ describe('validateEnv configuration (standalone stack)', () => {
 
     process.env.CONVERSION_SERVICE_URL = 'http://user:pass@conversion:8004';
     expect(() => validateEnv()).toThrow(/CONVERSION_SERVICE_URL/);
+  });
+
+  it('requires a 64-hex-char LLM_CONFIG_ENCRYPTION_KEY for BYOK key storage', () => {
+    process.env.NODE_ENV = 'development';
+    Object.assign(process.env, REQUIRED_VARS());
+    delete process.env.LLM_CONFIG_ENCRYPTION_KEY;
+    const { validateEnv } = require('./validateEnv');
+    expect(() => validateEnv()).toThrow(/LLM_CONFIG_ENCRYPTION_KEY/);
+
+    process.env.LLM_CONFIG_ENCRYPTION_KEY = 'not-hex';
+    expect(() => validateEnv()).toThrow(/LLM_CONFIG_ENCRYPTION_KEY/);
+
+    process.env.LLM_CONFIG_ENCRYPTION_KEY = 'ab'.repeat(16); // 32 hex chars = 16 bytes
+    expect(() => validateEnv()).toThrow(/LLM_CONFIG_ENCRYPTION_KEY/);
+
+    process.env.LLM_CONFIG_ENCRYPTION_KEY = 'ab'.repeat(32);
+    expect(() => validateEnv()).not.toThrow();
   });
 
   it('fails closed for production registration unless explicitly enabled', () => {

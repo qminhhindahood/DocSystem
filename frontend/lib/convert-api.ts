@@ -9,6 +9,16 @@ export class AuthError extends Error {
   constructor() { super('Unauthorized'); this.name = 'AuthError'; }
 }
 
+/** Non-2xx response; `status` lets callers branch (e.g. 422 scanned-no-key). */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 export interface ConversionStatus {
   jobId: string;
   status: 'queued' | 'processing' | 'completed' | 'completed_with_warnings' | 'failed' | null;
@@ -23,7 +33,7 @@ async function handle<T>(res: Response): Promise<T> {
   if (res.status === 401) throw new AuthError();
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Yêu cầu thất bại (${res.status})`);
+    throw new ApiError(body.error || `Yêu cầu thất bại (${res.status})`, res.status);
   }
   return res.json() as Promise<T>;
 }

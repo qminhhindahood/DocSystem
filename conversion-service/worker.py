@@ -24,6 +24,13 @@ from job_store import JobStore
 from metrics import METRICS
 from pipeline import convert_pdf
 from quota import QuotaService
+from vision.gemini_contract import VisionAuthError
+
+# Clear Vietnamese message for a rejected BYOK key (fail-fast + refund).
+VISION_AUTH_FAILED_DETAIL = (
+    "Khóa API Gemini của bạn bị từ chối. Hãy kiểm tra lại khóa trong Cài đặt "
+    "(biểu tượng bánh răng ở thanh bên) rồi thử lại."
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,7 +70,8 @@ def process_job(store: JobStore, job: dict) -> None:
     out_path = str(config.OUTPUT_DIR / f"{job_id}.docx")
     try:
         docx_path, report = convert_pdf(
-            pdf_path, out_path, str(config.MEDIA_DIR / job_id)
+            pdf_path, out_path, str(config.MEDIA_DIR / job_id),
+            vision=job.get("vision"),
         )
         METRICS.inc("conversion_jobs_total", status=report.status)
         METRICS.record_redis(f"jobs:{report.status}", redis_client=store.redis_client)
@@ -94,6 +102,15 @@ def process_job(store: JobStore, job: dict) -> None:
         METRICS.record_redis("jobs:failed", redis_client=store.redis_client)
         METRICS.record_outcome("failed")
         store.update(job_id, status="failed", progress=1.0, error=e.detail)
+        _refund_once(store, job)
+    except VisionAuthError:
+        # BYOK fail-fast: the user's Gemini key was rejected. Clear message,
+        # quota refunded once — never a page-by-page vague degradation.
+        METRICS.inc("conversion_jobs_total", status="failed")
+        METRICS.record_redis("jobs:failed", redis_client=store.redis_client)
+        METRICS.record_outcome("failed")
+        store.update(job_id, status="failed", progress=1.0,
+                     error=VISION_AUTH_FAILED_DETAIL)
         _refund_once(store, job)
     except Exception as e:  # noqa: BLE001
         logger.exception("job %s crashed", job_id)

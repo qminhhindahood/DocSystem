@@ -123,7 +123,95 @@ conn.request("POST", "/api/convert/bulk", body=bbody, headers={"Content-Type": f
 r = conn.getresponse(); bulk = json.loads(r.read())
 print("7. bulk:", r.status, "| count:", bulk.get("count"), "| jobs:", [(j["filename"], j["jobId"] is not None) for j in bulk.get("jobs", [])])
 
+# ─── BYOK vision gate (real stack) ────────────────────────────────────────────
+# The scanned-no-key 422 check always runs (no Gemini key needed). The real-key
+# transcription check runs only when E2E_GEMINI_API_KEY is set — that is the
+# "fully real" path: the backend stores the key encrypted, attaches it to the
+# job, and the worker calls Gemini for real.
+
+def make_scanned_pdf():
+    """A page with a full-page raster image and NO text layer -> SCANNED."""
+    from PIL import Image, ImageDraw
+    img = Image.new("RGB", (1240, 1754), "white")
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([100, 120, 1100, 160], fill="black")
+    draw.rectangle([100, 300, 1100, 320], fill="black")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    doc = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_image(page.rect, stream=buf.getvalue())
+    b = doc.tobytes()
+    doc.close()
+    return b
+
+byok_nokey_ok = False
+byok_realkey_ok = None  # None = skipped (no key provided)
+
+# 8a. Ensure the test user has NO stored key, then a scanned upload must 422.
+conn.request("DELETE", "/api/settings/llm", headers=AUTH)
+r = conn.getresponse(); r.read()
+body, ctype = multipart("file", "byok_scan.pdf", make_scanned_pdf())
+conn.request("POST", "/api/convert", body=body, headers={"Content-Type": ctype, **AUTH})
+r = conn.getresponse(); rej = json.loads(r.read())
+print("8. scanned upload, no key:", r.status, "|", str(rej.get("error", ""))[:60])
+byok_nokey_ok = (r.status == 422 and "trang quét" in str(rej.get("error", "")))
+
+# 8b. Real-key path (optional).
+GEMINI_KEY = os.environ.get("E2E_GEMINI_API_KEY", "").strip()
+if GEMINI_KEY:
+    cfg = json.dumps({
+        "provider": "gemini",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": os.environ.get("E2E_GEMINI_MODEL", "gemini-2.5-flash"),
+        "apiKey": GEMINI_KEY,
+    })
+    conn.request("POST", "/api/settings/llm", body=cfg,
+                 headers={"Content-Type": "application/json", **AUTH})
+    r = conn.getresponse(); saved = json.loads(r.read())
+    print("9. save gemini key:", r.status, "| hasApiKey:", saved.get("config", {}).get("hasApiKey"))
+
+    body, ctype = multipart("file", "byok_scan_key.pdf", make_scanned_pdf())
+    conn.request("POST", "/api/convert", body=body, headers={"Content-Type": ctype, **AUTH})
+    r = conn.getresponse(); sub = json.loads(r.read())
+    print("10. scanned upload, with key:", r.status, sub.get("jobId"))
+    if r.status == 202 and sub.get("jobId"):
+        vjob = sub["jobId"]
+        vstatus = None
+        for _ in range(240):
+            conn.request("GET", f"/api/convert/{vjob}", headers=AUTH)
+            r = conn.getresponse(); vstatus = json.loads(r.read())
+            if vstatus.get("status") not in ("queued", "processing"):
+                break
+            time.sleep(1.0)
+        print("11. vision status:", vstatus.get("status"), "| conf:", vstatus.get("confidence"),
+              "| degraded:", vstatus.get("degradedPages"))
+        conn.request("GET", f"/api/convert/{vjob}/result", headers=AUTH)
+        r = conn.getresponse(); vdocx = r.read()
+        vtext = ""
+        if r.status == 200 and len(vdocx) > 500:
+            from docx import Document as _Doc
+            vd = _Doc(io.BytesIO(vdocx))
+            vtext = " ".join(p.text for p in vd.paragraphs)
+        # The fake-free real path transcribes whatever Gemini sees; we only
+        # assert the job completed and produced a non-trivial DOCX here.
+        byok_realkey_ok = (vstatus.get("status") in ("completed", "completed_with_warnings")
+                           and len(vdocx) > 500)
+        print("12. vision DOCX:", len(vdocx), "bytes | text len:", len(vtext))
+    else:
+        byok_realkey_ok = False
+    # Clean up the stored key.
+    conn.request("DELETE", "/api/settings/llm", headers=AUTH)
+    r = conn.getresponse(); r.read()
+else:
+    print("9-12. real-key vision path SKIPPED (set E2E_GEMINI_API_KEY to run)")
+
 ok = (status.get("status") in ("completed", "completed_with_warnings") and len(docx) > 1000
       and "conversion_jobs_completed_total" in mtext and qlen == 0
-      and bulk.get("count") == 2)
+      and bulk.get("count") == 2
+      and byok_nokey_ok
+      and (byok_realkey_ok is None or byok_realkey_ok))
+print("BYOK no-key 422:", "PASS" if byok_nokey_ok else "FAIL")
+if byok_realkey_ok is not None:
+    print("BYOK real-key vision:", "PASS" if byok_realkey_ok else "FAIL")
 print("LIVE FULL-STACK E2E:", "PASS" if ok else "FAIL")

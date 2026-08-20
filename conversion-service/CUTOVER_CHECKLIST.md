@@ -8,9 +8,11 @@ Run `python eval/preflight.py --url http://<host>:8004` first; it must report
 - [ ] Docker Compose stack up: `docker compose up -d redis conversion conversion-worker backend`
 - [ ] `conversion` and `conversion-worker` both `healthy` (`docker compose ps`)
 - [ ] Backend env has `CONVERSION_SERVICE_URL=http://conversion:8004`
-- [ ] `GEMINI_API_KEY` set in compose env if scanned-PDF support is required
-      (without it the service still runs; scanned pages return
-      `completed_with_warnings` with degraded-page flags)
+- [ ] Backend env has `LLM_CONFIG_ENCRYPTION_KEY` (64 hex chars) — BYOK vision
+      keys are stored AES-256-GCM encrypted; the backend refuses to boot without it
+- [ ] Scanned-PDF support is BYOK: users configure their own Google Gemini key
+      in the app's settings dialog. Scanned uploads without a key are rejected
+      up front (422) and cost no quota — no server-side key exists.
 - [ ] Redis reachable from both services (queue mode shows `queueMode: true` on `/health`)
 
 ## 2. Smoke tests (post-deploy)
@@ -52,9 +54,8 @@ stops conversions but never loses data.
 ## 5. Known limitations at cutover
 
 - Scanned-page quality (P1) is uncertified without a real scanned corpus +
-  Gemini key; digital-path quality is certified (P0a gate 57/57).
+  a user-supplied Gemini key; digital-path quality is certified (P0a gate 57/57).
 - Queue-mode end-to-end requires Redis; without it the service runs
   in-process (dev fallback) and does not survive restarts.
-- Gemini Batch API path (`vision/batch_api.py`) activates only when the
-  google-genai SDK exposes `batches`; otherwise bulk scanned jobs use the
-  synchronous per-batch path.
+- Scanned batches use the synchronous per-batch Gemini path (≤ 8 pages per
+  call, 4–8 calls in parallel).

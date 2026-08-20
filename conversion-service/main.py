@@ -25,15 +25,18 @@ import uuid
 from dataclasses import asdict
 from typing import Any, Optional
 
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+import json
+
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 import config
-from ingest.intake import IntakeError, check_password, validate_and_save
+from ingest.intake import IntakeError, check_password, open_document, validate_and_save
 from job_store import JobStore
 from metrics import METRICS
 from pipeline import convert_pdf
 from quota import QuotaService
+from triage.triage import SCANNED, triage_page
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -66,6 +69,54 @@ def _local_job(job_id: str, **fields: Any) -> dict[str, Any]:
     return job
 
 
+# ─── BYOK vision (scanned pages) ──────────────────────────────────────────────
+# The backend attaches the submitting user's decrypted Gemini config as a JSON
+# form field. The server itself holds no vision key: a scanned upload without
+# one is rejected up front (422) BEFORE quota is charged, with instructions.
+
+SCANNED_NO_VISION_DETAIL = (
+    "Tài liệu có trang quét (scanned) nhưng chưa có khóa API Google Gemini. "
+    "Hãy vào Cài đặt (biểu tượng bánh răng ở thanh bên) và cấu hình khóa API "
+    "Google Gemini của bạn, sau đó thử lại."
+)
+
+
+def _parse_vision(raw: Optional[str]) -> Optional[dict[str, Any]]:
+    """Decode the optional 'vision' form field. Invalid input -> absent."""
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    provider = parsed.get("provider")
+    model = parsed.get("model")
+    api_key = parsed.get("apiKey")
+    if provider != "gemini" or not isinstance(model, str) or not model:
+        return None
+    if not isinstance(api_key, str) or not api_key:
+        return None
+    return {"provider": "gemini", "model": model, "apiKey": api_key}
+
+
+def _has_scanned_pages(pdf_path: str) -> bool:
+    """Triage pass over the saved PDF: True when any page is SCANNED.
+
+    Runs before quota so a keyless scanned upload is rejected free. The
+    pipeline re-triages during conversion; this pass only gates admission.
+    """
+    doc = open_document(pdf_path)
+    try:
+        for idx in range(len(doc)):
+            if triage_page(doc[idx]) == SCANNED:
+                return True
+        return False
+    finally:
+        doc.close()
+
+
 def _record_job_metrics(report) -> None:
     METRICS.inc("conversion_jobs_total", status=report.status)
     for ptype, count in report.page_types.items():
@@ -76,13 +127,14 @@ def _record_job_metrics(report) -> None:
     METRICS.record_outcome(report.status)
 
 
-async def _run_job_in_process(job_id: str, pdf_path: str, filename: str) -> None:
+async def _run_job_in_process(job_id: str, pdf_path: str, filename: str,
+                              vision: Optional[dict[str, Any]] = None) -> None:
     _local_job(job_id, status="processing", progress=0.1)
     out_path = str(config.OUTPUT_DIR / f"{job_id}.docx")
     try:
         _local_job(job_id, progress=0.3)
         docx_path, report = await asyncio.to_thread(
-            convert_pdf, pdf_path, out_path, str(config.MEDIA_DIR / job_id)
+            convert_pdf, pdf_path, out_path, str(config.MEDIA_DIR / job_id), vision
         )
         _local_job(job_id, progress=1.0)
         _record_job_metrics(report)
@@ -157,6 +209,7 @@ async def metrics() -> str:
 async def convert(
     file: UploadFile = File(...),
     x_user_id: Optional[str] = Header(default=None),
+    vision: Optional[str] = Form(default=None),
 ) -> dict[str, Any]:
     """Accept a PDF upload, start a conversion job, return its jobId."""
     # Validate + password-check FIRST so rejected uploads never consume quota
@@ -167,6 +220,17 @@ async def convert(
         check_password(pdf_path)
     except IntakeError as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+    # BYOK vision gate (still before quota): scanned pages need the user's own
+    # Gemini key. Without one, reject up front with instructions — free.
+    vision_config = _parse_vision(vision)
+    if vision_config is None and _has_scanned_pages(pdf_path):
+        try:
+            from pathlib import Path
+            Path(pdf_path).unlink()
+        except OSError:
+            pass
+        raise HTTPException(status_code=422, detail=SCANNED_NO_VISION_DETAIL)
 
     # Per-user daily quota (plan §8) — charged only after validation passes;
     # the just-saved staging file is removed if quota denies the upload so a
@@ -195,16 +259,17 @@ async def convert(
         })
         try:
             STORE.enqueue({"jobId": job_id, "pdfPath": pdf_path,
-                           "filename": file.filename, "userId": x_user_id})
+                           "filename": file.filename, "userId": x_user_id,
+                           "vision": vision_config})
         except RuntimeError:
             # Redis vanished between check and enqueue — fall back in-process.
             _local_job(job_id, status="queued", filename=file.filename)
-            asyncio.create_task(_run_job_in_process(job_id, pdf_path, file.filename or "upload.pdf"))
+            asyncio.create_task(_run_job_in_process(job_id, pdf_path, file.filename or "upload.pdf", vision_config))
         return {"jobId": job_id, "mode": "queue"}
 
     # In-process dev mode
     _local_job(job_id, status="queued", filename=file.filename)
-    asyncio.create_task(_run_job_in_process(job_id, pdf_path, file.filename or "upload.pdf"))
+    asyncio.create_task(_run_job_in_process(job_id, pdf_path, file.filename or "upload.pdf", vision_config))
     return {"jobId": job_id, "mode": "in-process"}
 
 
@@ -282,6 +347,7 @@ async def convert_report(job_id: str) -> dict[str, Any]:
 async def convert_bulk(
     files: list[UploadFile] = File(...),
     x_user_id: Optional[str] = Header(default=None),
+    vision: Optional[str] = Form(default=None),
 ) -> dict[str, Any]:
     """Bulk conversion (P4): submit several PDFs, one job each.
 
@@ -293,6 +359,7 @@ async def convert_bulk(
             status_code=400,
             detail=f"Bulk conversion accepts at most {config.BULK_MAX_FILES} files",
         )
+    vision_config = _parse_vision(vision)
     results: list[dict[str, Any]] = []
     for file in files:
         # Validate first so a bad file never consumes quota.
@@ -301,6 +368,18 @@ async def convert_bulk(
             check_password(pdf_path)
         except IntakeError as e:
             results.append({"filename": file.filename, "jobId": None, "error": e.detail})
+            continue
+
+        # BYOK vision gate per file (before quota): scanned pages need the
+        # user's own Gemini key; rejected files cost nothing.
+        if vision_config is None and _has_scanned_pages(pdf_path):
+            try:
+                from pathlib import Path
+                Path(pdf_path).unlink()
+            except OSError:
+                pass
+            results.append({"filename": file.filename, "jobId": None,
+                            "error": SCANNED_NO_VISION_DETAIL})
             continue
 
         if x_user_id:
@@ -324,13 +403,14 @@ async def convert_bulk(
                                 "filename": file.filename, "userId": x_user_id})
             try:
                 STORE.enqueue({"jobId": job_id, "pdfPath": pdf_path,
-                               "filename": file.filename, "userId": x_user_id})
+                               "filename": file.filename, "userId": x_user_id,
+                               "vision": vision_config})
             except RuntimeError:
                 _local_job(job_id, status="queued", filename=file.filename)
-                asyncio.create_task(_run_job_in_process(job_id, pdf_path, file.filename or "upload.pdf"))
+                asyncio.create_task(_run_job_in_process(job_id, pdf_path, file.filename or "upload.pdf", vision_config))
         else:
             _local_job(job_id, status="queued", filename=file.filename)
-            asyncio.create_task(_run_job_in_process(job_id, pdf_path, file.filename or "upload.pdf"))
+            asyncio.create_task(_run_job_in_process(job_id, pdf_path, file.filename or "upload.pdf", vision_config))
         results.append({"filename": file.filename, "jobId": job_id, "error": None})
     METRICS.inc("conversion_bulk_requests_total")
     return {"jobs": results, "count": len(results)}

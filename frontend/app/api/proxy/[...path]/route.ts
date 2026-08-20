@@ -26,6 +26,10 @@ const PROXY_RULES: ReadonlyArray<{ pattern: RegExp; methods: ReadonlySet<string>
   { pattern: new RegExp(`^convert\\/${SEGMENT}$`), methods: new Set(['GET']) },
   { pattern: new RegExp(`^convert\\/${SEGMENT}\\/report$`), methods: new Set(['GET']) },
   { pattern: new RegExp(`^convert\\/${SEGMENT}\\/result$`), methods: new Set(['GET']) },
+  // BYOK vision provider settings (backend /api/settings/llm)
+  { pattern: /^settings\/llm$/, methods: new Set(['GET', 'POST', 'DELETE']) },
+  { pattern: /^settings\/llm\/test$/, methods: new Set(['POST']) },
+  { pattern: /^settings\/llm\/openrouter\/models$/, methods: new Set(['GET']) },
 ];
 
 export function proxyRequestStatus(path: string, method: string): 200 | 404 | 405 {
