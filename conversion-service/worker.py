@@ -50,7 +50,11 @@ def _refund_once(store: JobStore, job: dict) -> None:
     if redis_client is not None:
         try:
             if redis_client.set(flag_key, "1", nx=True, ex=config.JOB_STATE_TTL_S):
-                QUOTA.refund(user_id)
+                quota_key = job.get("quotaKey")
+                if quota_key:
+                    QUOTA.refund_charge(quota_key)
+                else:
+                    QUOTA.refund(user_id)
             return
         except Exception as e:  # noqa: BLE001
             logger.warning("refund flag check failed (%s); skipping refund", e)
@@ -59,7 +63,11 @@ def _refund_once(store: JobStore, job: dict) -> None:
     state = store.load(job["jobId"]) or {}
     if not state.get("quotaRefunded"):
         store.update(job["jobId"], quotaRefunded=True)
-        QUOTA.refund(user_id)
+        quota_key = job.get("quotaKey")
+        if quota_key:
+            QUOTA.refund_charge(quota_key)
+        else:
+            QUOTA.refund(user_id)
 
 
 def process_job(store: JobStore, job: dict) -> None:

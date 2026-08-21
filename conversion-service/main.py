@@ -154,11 +154,31 @@ def _record_job_metrics(report) -> None:
     METRICS.record_outcome(report.status)
 
 
+def _refund_local_once(
+    job_id: str,
+    user_id: Optional[str] = None,
+    quota_key: Optional[str] = None,
+) -> None:
+    """Refund one failed local job using the charge captured at admission."""
+    state = _LOCAL_JOBS.get(job_id) or {}
+    owner = user_id or state.get("userId")
+    charge_key = quota_key or state.get("quotaKey")
+    if not owner or not charge_key or state.get("quotaRefunded"):
+        return
+    _local_job(job_id, quotaRefunded=True)
+    QUOTA.refund_charge(charge_key)
+
+
 async def _run_job_in_process(job_id: str, pdf_path: str, filename: str,
                               vision: Optional[dict[str, Any]] = None,
                               user_id: Optional[str] = None,
                               quota_key: Optional[str] = None) -> None:
-    _local_job(job_id, status="processing", progress=0.1)
+    context_fields: dict[str, Any] = {}
+    if user_id is not None:
+        context_fields["userId"] = user_id
+    if quota_key is not None:
+        context_fields["quotaKey"] = quota_key
+    _local_job(job_id, status="processing", progress=0.1, **context_fields)
     out_path = str(config.OUTPUT_DIR / f"{job_id}.docx")
     try:
         _local_job(job_id, progress=0.3)
@@ -170,6 +190,7 @@ async def _run_job_in_process(job_id: str, pdf_path: str, filename: str,
         if report.status == "failed":
             _local_job(job_id, status="failed", report=asdict(report))
             delete_job_artifacts(job_id)
+            _refund_local_once(job_id, user_id, quota_key)
         else:
             mark_job_artifacts_complete(job_id)
             _local_job(job_id, status=report.status, resultUrl=f"/convert/{job_id}/result",
@@ -180,18 +201,21 @@ async def _run_job_in_process(job_id: str, pdf_path: str, filename: str,
         METRICS.record_outcome("failed")
         _local_job(job_id, status="failed", error=e.detail)
         delete_job_artifacts(job_id)
+        _refund_local_once(job_id, user_id, quota_key)
     except VisionAuthError:
         logger.exception("conversion job %s rejected the Gemini key", job_id)
         METRICS.inc("conversion_jobs_total", status="failed")
         METRICS.record_outcome("failed")
         _local_job(job_id, status="failed", error=VISION_AUTH_FAILED_DETAIL)
         delete_job_artifacts(job_id)
+        _refund_local_once(job_id, user_id, quota_key)
     except Exception:  # noqa: BLE001
         logger.exception("conversion job %s failed", job_id)
         METRICS.inc("conversion_jobs_total", status="failed")
         METRICS.record_outcome("failed")
         _local_job(job_id, status="failed", error=UNEXPECTED_CONVERSION_ERROR)
         delete_job_artifacts(job_id)
+        _refund_local_once(job_id, user_id, quota_key)
     finally:
         try:
             Path(pdf_path).unlink(missing_ok=True)

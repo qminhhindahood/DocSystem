@@ -13,8 +13,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import fakeredis
 
 import config
+import main
 import worker
 from job_store import JobStore
+from pipeline import ConversionReport
 from quota import QuotaService
 
 
@@ -132,3 +134,88 @@ def test_worker_refunds_quota_on_failed_conversion(monkeypatch, tmp_path):
     # A second terminal handling of the same job must not refund again.
     worker.process_job(store, dequeued)
     assert _count(quota, "u9") == 0
+
+
+def test_worker_refunds_the_admission_day_after_utc_rollover(monkeypatch, tmp_path):
+    store = JobStore(redis_client=fakeredis.FakeRedis(decode_responses=True))
+    quota = QuotaService(redis_client=store.redis_client, limit=3)
+    monkeypatch.setattr(worker, "QUOTA", quota)
+    charge, _remaining = quota.charge("overnight-user")
+    assert charge is not None
+    next_day_key = "conversion:quota:overnight-user:20990102"
+    quota._redis.set(next_day_key, 1)
+    monkeypatch.setattr(quota, "_key", lambda _user_id: next_day_key)
+
+    source = tmp_path / "overnight.pdf"
+    source.write_bytes(b"%PDF-1.4 fake")
+    job = {
+        "jobId": "overnight-job",
+        "pdfPath": str(source),
+        "filename": "overnight.pdf",
+        "userId": "overnight-user",
+        "quotaKey": charge.key,
+    }
+    store.save("overnight-job", {
+        "jobId": "overnight-job",
+        "status": "queued",
+        "userId": "overnight-user",
+        "quotaKey": charge.key,
+    })
+
+    monkeypatch.setattr(
+        worker,
+        "convert_pdf",
+        lambda *_args, **_kwargs: (
+            "unused.docx",
+            ConversionReport(status="failed", confidence=0.0),
+        ),
+    )
+
+    worker.process_job(store, job)
+
+    assert int(quota._redis.get(charge.key) or 0) == 0
+    assert int(quota._redis.get(next_day_key) or 0) == 1
+
+
+def test_in_process_failure_refunds_once(monkeypatch, tmp_path):
+    quota = QuotaService(redis_client=None, limit=3)
+    monkeypatch.setattr(main, "QUOTA", quota)
+    charge, _remaining = quota.charge("local-refund-user")
+    assert charge is not None
+    source = tmp_path / "local-failure.pdf"
+    source.write_bytes(b"%PDF-1.4 fake")
+    main._LOCAL_JOBS["local-refund-job"] = {
+        "jobId": "local-refund-job",
+        "status": "queued",
+        "userId": "local-refund-user",
+        "quotaKey": charge.key,
+    }
+
+    def crash(*_args, **_kwargs):
+        raise RuntimeError("conversion failed")
+
+    monkeypatch.setattr(main, "convert_pdf", crash)
+
+    import asyncio
+
+    asyncio.run(main._run_job_in_process(
+        "local-refund-job",
+        str(source),
+        "local-failure.pdf",
+        user_id="local-refund-user",
+        quota_key=charge.key,
+    ))
+    assert quota._memory[charge.key][0] == 0
+
+    second_charge, _remaining = quota.charge("local-refund-user")
+    assert second_charge is not None and second_charge.key == charge.key
+    source.write_bytes(b"%PDF-1.4 fake")
+    asyncio.run(main._run_job_in_process(
+        "local-refund-job",
+        str(source),
+        "local-failure.pdf",
+        user_id="local-refund-user",
+        quota_key=charge.key,
+    ))
+
+    assert quota._memory[charge.key][0] == 1
