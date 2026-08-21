@@ -221,13 +221,9 @@ Map existing stream stages to this presentation without changing the SSE contrac
 
 Keep the real template lifecycle: loading, processing, review required, ready, rejected, failure, and empty. Show fidelity guarantees only when the current implementation can substantiate them. Mapping review is a focused workflow with back, review, correction, and completion actions. Deletion requires confirmation and row/card-level pending feedback.
 
-### Question answering
-
-The answer is the primary reading surface; sources are a distinct secondary region. Show source count and low-confidence state when supplied. Keep cancellation behavior. Source items expose article/clause metadata only when present and never fabricate citations.
-
 ### Dashboard
 
-Lead with one clear `Tạo tài liệu` action and compact supporting access to Documents, Templates, and Q&A. Do not add fake analytics or recent activity. Product trust comes from workflow clarity, not vanity metrics.
+Lead with one clear `Tạo tài liệu` action and compact supporting access to Documents and Templates. Do not add fake analytics or recent activity. Product trust comes from workflow clarity, not vanity metrics.
 
 ### Authentication and public pages
 

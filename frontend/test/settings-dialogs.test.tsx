@@ -40,7 +40,7 @@ describe('BYOK vision settings dialog', () => {
     await screen.findByLabelText('Nhà cung cấp');
 
     expect(screen.queryAllByText(/OpenRouter|hỏi đáp sắp ra mắt/i)).toHaveLength(0);
-    await user.click(screen.getByLabelText('Nhà cung cấp'));
+    expect(screen.queryByRole('combobox', { name: 'Nhà cung cấp' })).not.toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'OpenRouter' })).toBeNull();
   });
 
@@ -69,7 +69,7 @@ describe('BYOK vision settings dialog', () => {
     const user = userEvent.setup();
     render(<LLMSettingsDialog />);
     await user.click(screen.getByRole('button', { name: 'Cấu hình khóa API' }));
-    expect(await screen.findByLabelText('Nhà cung cấp')).toHaveTextContent('Google Gemini');
+    expect(await screen.findByLabelText('Nhà cung cấp')).toHaveValue('Google Gemini');
     expect(screen.getByLabelText('URL cơ sở')).toHaveValue('https://generativelanguage.googleapis.com/v1beta/openai');
     expect(screen.getByLabelText('Khóa API')).toBeRequired();
   });

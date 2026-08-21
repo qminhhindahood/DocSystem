@@ -16,11 +16,13 @@ import { userAuthMiddleware, requireAuth } from '../middleware/user_auth';
 import { validate } from '../middleware/validation';
 import { encryptApiKey, decryptApiKey } from '../utils/encryption';
 import {
-  canonicalizeProviderBaseUrl,
-  providerRequiresApiKey,
   testLLMConnection,
 } from '../services/llm_config_service';
-import { LLM_PROVIDER_IDS, type LLMProvider } from '../constants/llm-providers';
+import {
+  CLOUD_PROVIDER_BASES,
+  LLM_PROVIDER_IDS,
+  type LLMProvider,
+} from '../constants/llm-providers';
 import { validateProviderTarget, parseAllowlist } from '../utils/urlGuard';
 
 const router = express.Router();
@@ -88,10 +90,10 @@ router.post(
   validate(LLMSettingsSchema),
   async (req, res) => {
     try {
-      const { provider, baseUrl, model, apiKey } = req.body;
+      const { provider, model, apiKey } = req.body;
       const providerType = provider as LLMProvider;
       const userId = req.user!.userId;
-      const normalizedBaseUrl = canonicalizeProviderBaseUrl(providerType, baseUrl);
+      const normalizedBaseUrl = CLOUD_PROVIDER_BASES.gemini;
       const existing = await prisma.userLLMConfig.findUnique({
         where: { userId },
         select: { provider: true, encryptedApiKey: true, apiKeyIv: true, apiKeyAuthTag: true },
@@ -106,7 +108,7 @@ router.post(
 
       const hasSubmittedKey = typeof apiKey === 'string' && apiKey.length > 0;
       const canReuseSavedKey = Boolean(existing && existing.provider === provider && existing.encryptedApiKey);
-      if (providerRequiresApiKey(providerType) && !hasSubmittedKey && !canReuseSavedKey) {
+      if (!hasSubmittedKey && !canReuseSavedKey) {
         return res.status(400).json({ error: 'API key is required for this provider' });
       }
 
@@ -171,9 +173,9 @@ router.post(
   validate(LLMSettingsSchema),
   async (req, res) => {
     try {
-      const { provider, baseUrl, model, apiKey } = req.body;
+      const { provider, model, apiKey } = req.body;
       const providerType = provider as LLMProvider;
-      const normalizedBaseUrl = canonicalizeProviderBaseUrl(providerType, baseUrl);
+      const normalizedBaseUrl = CLOUD_PROVIDER_BASES.gemini;
       const submittedApiKey = typeof apiKey === 'string' && apiKey.length > 0 ? apiKey : undefined;
       const existing = submittedApiKey ? null : await prisma.userLLMConfig.findUnique({
         where: { userId: req.user!.userId },
@@ -184,7 +186,7 @@ router.post(
       if (!effectiveApiKey && existing && existing.provider === provider && existing.encryptedApiKey) {
         effectiveApiKey = decryptApiKey(existing.encryptedApiKey, existing.apiKeyIv, existing.apiKeyAuthTag);
       }
-      if (providerRequiresApiKey(providerType) && !effectiveApiKey) {
+      if (!effectiveApiKey) {
         return res.status(400).json({ success: false, error: 'API key is required for this provider' });
       }
 

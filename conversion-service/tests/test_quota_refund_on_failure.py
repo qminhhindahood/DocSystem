@@ -95,6 +95,18 @@ def test_concurrent_redis_admission_never_exceeds_limit():
     assert quota.check_and_increment("u-concurrent") == (True, 0)
 
 
+def test_refund_charge_once_is_atomic_and_idempotent():
+    quota = _quota_with_fake()
+    charge, _remaining = quota.charge("atomic-user")
+    assert charge is not None
+
+    assert quota.refund_charge_once("refund:atomic-job", charge, ttl_s=60) is True
+    assert quota.refund_charge_once("refund:atomic-job", charge, ttl_s=60) is False
+
+    assert int(quota._redis.get(charge.key) or 0) == 0
+    assert quota._redis.get("refund:atomic-job") == "1"
+
+
 def test_worker_refunds_quota_on_failed_conversion(monkeypatch, tmp_path):
     """A failed conversion refunds the submitting user exactly once."""
     store = JobStore(redis_client=fakeredis.FakeRedis(decode_responses=True))
@@ -198,24 +210,52 @@ def test_in_process_failure_refunds_once(monkeypatch, tmp_path):
 
     import asyncio
 
-    asyncio.run(main._run_job_in_process(
-        "local-refund-job",
-        str(source),
-        "local-failure.pdf",
+    job = main.AdmittedJob(
+        job_id="local-refund-job",
+        pdf_path=str(source),
+        filename="local-failure.pdf",
         user_id="local-refund-user",
-        quota_key=charge.key,
-    ))
+        vision=None,
+        quota_charge=charge,
+    )
+    asyncio.run(main._run_job_in_process(job))
     assert quota._memory[charge.key][0] == 0
 
     second_charge, _remaining = quota.charge("local-refund-user")
     assert second_charge is not None and second_charge.key == charge.key
     source.write_bytes(b"%PDF-1.4 fake")
-    asyncio.run(main._run_job_in_process(
-        "local-refund-job",
-        str(source),
-        "local-failure.pdf",
-        user_id="local-refund-user",
-        quota_key=charge.key,
-    ))
+    asyncio.run(main._run_job_in_process(job))
 
     assert quota._memory[charge.key][0] == 1
+
+
+def test_worker_does_not_mark_refund_when_atomic_refund_fails(monkeypatch):
+    store = JobStore(redis_client=fakeredis.FakeRedis(decode_responses=True))
+    quota = QuotaService(redis_client=store.redis_client, limit=3)
+    charge, _remaining = quota.charge("retry-user")
+    assert charge is not None
+    job = {
+        "jobId": "retry-job",
+        "userId": "retry-user",
+        "quotaKey": charge.key,
+    }
+    store.save("retry-job", {"jobId": "retry-job", "userId": "retry-user"})
+    monkeypatch.setattr(worker, "QUOTA", quota)
+    original = quota.refund_charge_once
+    attempts = 0
+
+    def fail_once(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise ConnectionError("refund unavailable")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(quota, "refund_charge_once", fail_once)
+
+    worker._refund_once(store, job)
+    assert int(quota._redis.get(charge.key) or 0) == 1
+    assert quota._redis.get(f"{config.JOB_STATE_PREFIX}retry-job:refunded") is None
+
+    worker._refund_once(store, job)
+    assert int(quota._redis.get(charge.key) or 0) == 0

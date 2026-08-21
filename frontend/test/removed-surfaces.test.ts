@@ -48,6 +48,15 @@ describe('removed master-stack frontend surfaces (standalone prune, ticket 06)',
     expect(read('lib/llm-providers.ts')).not.toContain('openrouter');
   });
 
+  it('Q&A types and active design guidance stay deleted', () => {
+    const apiTypes = read('types/api.ts');
+    const activeDesign = read('docs/superpowers/specs/2026-08-08-rounded-civic-workspace-design.md');
+    for (const remnant of ['QASource', 'QAMessage', 'QAAnswer']) {
+      expect(apiTypes).not.toContain(remnant);
+    }
+    expect(activeDesign).not.toMatch(/Question Answering|Q&A/);
+  });
+
   it.each([
     'lib/api.ts',
     'lib/analytics.ts',

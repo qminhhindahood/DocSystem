@@ -3,9 +3,19 @@ jest.mock('./middleware/request_logging', () => ({
 }));
 
 import { app } from './index';
+import {
+  CONVERSION_STATUS_RATE_LIMIT_MAX,
+  SUPPORTED_BULK_POLL_REQUESTS_PER_WINDOW,
+} from './middleware/conversion_status_limiter';
 import { withHttpServer } from './test/http';
 
 describe('conversion status rate limiting', () => {
+  it('budgets the full sustained ten-job polling window', () => {
+    expect(SUPPORTED_BULK_POLL_REQUESTS_PER_WINDOW).toBe(6_000);
+    expect(CONVERSION_STATUS_RATE_LIMIT_MAX).toBeGreaterThan(
+      SUPPORTED_BULK_POLL_REQUESTS_PER_WINDOW,
+    );
+  });
   it('keeps general protection while allowing the supported polling workflow', async () => {
     await withHttpServer(app, async (baseUrl) => {
       const generalStatuses = await Promise.all(

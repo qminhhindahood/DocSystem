@@ -140,24 +140,3 @@ export interface DocumentsListResponse {
     pages: number;
   };
 }
-
-// ============================================================================
-// Q&A Types
-// ============================================================================
-
-export type QASource = { id: string; content: string; article?: string; clause?: string };
-
-export interface QAMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: string;
-  sources?: QASource[];
-  lowConfidence?: boolean;
-}
-
-export interface QAAnswer {
-  answer: string;
-  sources: QASource[];
-  sourceCount: number;
-  lowConfidence?: boolean;
-}

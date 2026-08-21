@@ -29,6 +29,7 @@ class QuotaService:
         self._redis = redis_client
         self.limit = limit
         self._memory: dict[str, tuple[int, float]] = {}
+        self._memory_refunds: dict[str, float] = {}
         self._memory_lock = threading.Lock()
 
     def _key(self, user_id: str) -> str:
@@ -108,3 +109,52 @@ class QuotaService:
             if now > expires:
                 return
             self._memory[key] = (max(0, count - 1), expires)
+
+    def refund_charge_once(
+        self,
+        refund_key: str,
+        charge: QuotaCharge | str,
+        *,
+        ttl_s: int,
+    ) -> bool:
+        """Atomically refund one captured charge and record its idempotency key.
+
+        Returns True for the caller that performs the refund and False when the
+        same refund was already completed. Redis errors are raised so a caller
+        can retry; a Redis-backed charge must never be "refunded" into an
+        unrelated in-memory counter.
+        """
+        key = charge.key if isinstance(charge, QuotaCharge) else charge
+        if self._redis is not None:
+            while True:
+                try:
+                    with self._redis.pipeline() as pipe:
+                        pipe.watch(refund_key, key)
+                        if pipe.get(refund_key) is not None:
+                            pipe.unwatch()
+                            return False
+                        count = max(0, int(pipe.get(key) or 0))
+                        pipe.multi()
+                        if count > 0:
+                            pipe.decr(key)
+                        pipe.set(refund_key, "1", ex=ttl_s)
+                        pipe.execute()
+                        return True
+                except WatchError:
+                    continue
+
+        now = time.time()
+        with self._memory_lock:
+            expired_markers = [
+                marker for marker, expires in self._memory_refunds.items()
+                if expires <= now
+            ]
+            for marker in expired_markers:
+                del self._memory_refunds[marker]
+            if refund_key in self._memory_refunds:
+                return False
+            count, expires = self._memory.get(key, (0, now + 86400))
+            if now <= expires and count > 0:
+                self._memory[key] = (count - 1, expires)
+            self._memory_refunds[refund_key] = now + ttl_s
+            return True

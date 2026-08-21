@@ -14,13 +14,11 @@ import axios, { AxiosError } from 'axios';
 import { decryptApiKey } from '../utils/encryption';
 import { prisma } from '../utils/prisma';
 import {
-  CLOUD_PROVIDER_BASES,
   type LLMProvider,
 } from '../constants/llm-providers';
 import { validateProviderTarget, parseAllowlist } from '../utils/urlGuard';
 
 export type { LLMProvider } from '../constants/llm-providers';
-export { providerRequiresApiKey } from '../constants/llm-providers';
 
 export interface LLMProviderConfig {
   provider: LLMProvider;
@@ -36,11 +34,7 @@ export interface VisionJobConfig {
   apiKey: string;
 }
 
-export function canonicalizeProviderBaseUrl(provider: LLMProvider, baseUrl: string): string {
-  return CLOUD_PROVIDER_BASES[provider] || baseUrl.trim().replace(/\/+$/, '');
-}
-
-export function buildChatCompletionsEndpoint(baseUrl: string, _provider: LLMProvider): string {
+export function buildChatCompletionsEndpoint(baseUrl: string): string {
   const normalized = baseUrl.trim().replace(/\/+$/, '');
   if (/\/chat\/completions$/i.test(normalized)) return normalized;
   return `${normalized}/chat/completions`;
@@ -97,7 +91,7 @@ export async function testLLMConnection(config: LLMProviderConfig): Promise<{
   error?: string;
 }> {
   try {
-    const url = buildChatCompletionsEndpoint(config.baseUrl, config.provider);
+    const url = buildChatCompletionsEndpoint(config.baseUrl);
     const allowlist = parseAllowlist(undefined);
     const target = await validateProviderTarget(config.baseUrl, config.provider, allowlist);
     const headers = providerHeaders(config);

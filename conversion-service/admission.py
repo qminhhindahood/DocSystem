@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Optional
@@ -16,6 +17,8 @@ SCANNED_NO_VISION_DETAIL = (
     "Hãy vào Cài đặt (biểu tượng bánh răng ở thanh bên) và cấu hình khóa API "
     "Google Gemini của bạn, sau đó thử lại."
 )
+
+logger = logging.getLogger(__name__)
 
 
 class AdmissionError(Exception):
@@ -58,13 +61,16 @@ class AdmittedJob:
         }
 
 
-def _delete_source(pdf_path: Optional[str]) -> None:
+def delete_source(pdf_path: Optional[str]) -> bool:
+    """Delete one admitted upload, logging retention failures for follow-up."""
     if not pdf_path:
-        return
+        return True
     try:
         Path(pdf_path).unlink(missing_ok=True)
-    except OSError:
-        pass
+        return True
+    except OSError as error:
+        logger.error("could not delete rejected source %s: %s", pdf_path, error)
+        return False
 
 
 def admit_upload(
@@ -102,8 +108,8 @@ def admit_upload(
             quota_charge=charge,
         )
     except (IntakeError, AdmissionError):
-        _delete_source(pdf_path)
+        delete_source(pdf_path)
         raise
     except Exception as error:
-        _delete_source(pdf_path)
+        delete_source(pdf_path)
         raise AdmissionError(500, UNEXPECTED_CONVERSION_ERROR) from error

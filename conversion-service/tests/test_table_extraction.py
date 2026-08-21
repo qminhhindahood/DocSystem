@@ -164,7 +164,7 @@ def test_sparse_detected_grid_uses_text_fallback_with_fidelity_warning(tmp_path)
     text = " ".join(paragraph.text for paragraph in converted.paragraphs)
     assert "Biểu mẫu lưu trữ hồ sơ hành chính" in text
     assert report.status == "completed_with_warnings"
-    assert any("failed the quality gate" in warning for warning in report.warnings)
+    assert any("không đạt ngưỡng chất lượng" in warning for warning in report.warnings)
 
 
 def test_merged_pdf_cell_becomes_word_grid_span(tmp_path):

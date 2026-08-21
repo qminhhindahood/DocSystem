@@ -16,9 +16,9 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import asdict
-from pathlib import Path
 
 import config
+from admission import delete_source
 from artifact_cleanup import (
     cleanup_expired_artifacts,
     delete_job_artifacts,
@@ -46,28 +46,17 @@ def _refund_once(store: JobStore, job: dict) -> None:
     if not user_id:
         return
     flag_key = f"{config.JOB_STATE_PREFIX}{job['jobId']}:refunded"
-    redis_client = store.redis_client
-    if redis_client is not None:
-        try:
-            if redis_client.set(flag_key, "1", nx=True, ex=config.JOB_STATE_TTL_S):
-                quota_key = job.get("quotaKey")
-                if quota_key:
-                    QUOTA.refund_charge(quota_key)
-                else:
-                    QUOTA.refund(user_id)
-            return
-        except Exception as e:  # noqa: BLE001
-            logger.warning("refund flag check failed (%s); skipping refund", e)
-            return
-    # In-memory fallback: flag on the job state itself.
-    state = store.load(job["jobId"]) or {}
-    if not state.get("quotaRefunded"):
-        store.update(job["jobId"], quotaRefunded=True)
-        quota_key = job.get("quotaKey")
-        if quota_key:
-            QUOTA.refund_charge(quota_key)
-        else:
-            QUOTA.refund(user_id)
+    quota_key = job.get("quotaKey") or QUOTA._key(user_id)
+    try:
+        QUOTA.refund_charge_once(
+            flag_key,
+            quota_key,
+            ttl_s=config.JOB_STATE_TTL_S,
+        )
+    except Exception as error:  # noqa: BLE001
+        logger.warning("quota refund failed for job %s: %s", job["jobId"], error)
+        return
+    store.update(job["jobId"], quotaRefunded=True)
 
 
 def process_job(store: JobStore, job: dict) -> None:
@@ -140,11 +129,7 @@ def process_job(store: JobStore, job: dict) -> None:
         # reclaimed, then remove the uploaded source. The DOCX result stays
         # until its JobStore record TTL expires.
         store.finish_processing(job)
-        try:
-            if Path(pdf_path).exists():
-                Path(pdf_path).unlink()
-        except OSError:
-            pass
+        delete_source(pdf_path)
 
 
 def run_worker() -> None:

@@ -2,6 +2,10 @@ import rateLimit from 'express-rate-limit';
 import type { Request } from 'express';
 
 const windowMs = Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000;
+export const SUPPORTED_BULK_POLL_REQUESTS_PER_WINDOW = 10 * (windowMs / 1_500);
+export const CONVERSION_STATUS_RATE_LIMIT_MAX = Number(
+  process.env.CONVERSION_STATUS_RATE_LIMIT_MAX,
+) || 7_200;
 
 /** Exact polling endpoint only; reports and downloads retain the general cap. */
 export function isConversionStatusRequest(req: Request): boolean {
@@ -20,7 +24,7 @@ export const generalApiLimiter = rateLimit({
 export const conversionStatusLimiter = rateLimit({
   windowMs,
   // Ten supported jobs polling every 1.5 seconds make 6,000 reads/window.
-  max: Number(process.env.CONVERSION_STATUS_RATE_LIMIT_MAX) || 7_200,
+  max: CONVERSION_STATUS_RATE_LIMIT_MAX,
   standardHeaders: true,
   legacyHeaders: false,
 });

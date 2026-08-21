@@ -17,8 +17,3 @@ export const CLOUD_PROVIDER_BASES: Record<LLMProvider, string> = {
 export function isLLMProvider(value: string): value is LLMProvider {
   return (LLM_PROVIDER_IDS as readonly string[]).includes(value);
 }
-
-/** Gemini is a cloud provider and always requires the user's API key. */
-export function providerRequiresApiKey(_provider: LLMProvider): boolean {
-  return true;
-}

@@ -376,7 +376,7 @@ def test_low_document_confidence_sets_delivery_warning(monkeypatch, tmp_path):
     assert report.coverage == 1.0
     assert report.confidence == 0.55
     assert report.status == "completed_with_warnings"
-    assert any("delivery threshold" in warning for warning in report.warnings)
+    assert any("ngưỡng bàn giao" in warning for warning in report.warnings)
 
 
 def test_scanned_without_vision_degrades_not_drops(tmp_path):
@@ -385,7 +385,7 @@ def test_scanned_without_vision_degrades_not_drops(tmp_path):
     out = str(tmp_path / "scan.docx")
     _, report = convert_pdf(pdf, out, str(tmp_path / "media"), None)
     assert report.degraded_pages == [1]
-    assert any("Gemini vision" in w for w in report.warnings)
+    assert any("cần Gemini" in w for w in report.warnings)
 
 
 def test_bad_vision_batch_degrades_its_pages(monkeypatch, tmp_path):
@@ -399,7 +399,7 @@ def test_bad_vision_batch_degrades_its_pages(monkeypatch, tmp_path):
     vision = {"provider": "gemini", "model": "m", "apiKey": "k"}
     _, report = convert_pdf(pdf, out, str(tmp_path / "media"), vision)
     assert report.degraded_pages == [1]
-    assert any("no usable result" in w for w in report.warnings)
+    assert any("không trả về kết quả có thể sử dụng" in w for w in report.warnings)
 
 
 # ─── 3. Worker fail-fast on a rejected key + single refund ────────────────────

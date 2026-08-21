@@ -49,7 +49,7 @@ describe('conversion polling scheduler', () => {
     vi.clearAllMocks();
   });
 
-  it('uses one timer for ten active jobs and clears it on unmount', async () => {
+  it('uses one timer and one live region for sustained ten-job monitoring', async () => {
     const intervalSpy = vi.spyOn(globalThis, 'setInterval');
     const clearSpy = vi.spyOn(globalThis, 'clearInterval');
     const view = render(<ConvertPage />);
@@ -57,10 +57,11 @@ describe('conversion polling scheduler', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Inject ten jobs' }));
 
     expect(intervalSpy).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(1_500);
-    expect(getConversionStatus).toHaveBeenCalledTimes(10);
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(900_000);
+    expect(getConversionStatus).toHaveBeenCalledTimes(6_000);
 
     view.unmount();
     expect(clearSpy).toHaveBeenCalledTimes(1);
-  });
+  }, 15_000);
 });

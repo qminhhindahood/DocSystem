@@ -45,9 +45,11 @@ function isTerminal(status: string): boolean {
 export default function ConvertPage() {
   const [jobs, setJobs] = useState<ConversionJob[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
   const jobsRef = useRef<ConversionJob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollInFlightRef = useRef(false);
+  const mountedRef = useRef(true);
 
   const stopPolling = useCallback(() => {
     if (timerRef.current) {
@@ -67,28 +69,45 @@ export default function ConvertPage() {
   }, []);
 
   const pollActiveJobs = useCallback(async () => {
-    if (pollInFlightRef.current) return;
+    if (pollInFlightRef.current || !mountedRef.current) return;
     pollInFlightRef.current = true;
     try {
       const activeJobs = jobsRef.current.filter((job) => !isTerminal(statusOf(job)));
+      const patches = new Map<string, Partial<ConversionJob>>();
       for (const job of activeJobs) {
         try {
           const status = await getConversionStatus(job.jobId);
-          updateJob(job.jobId, { status, error: status.error ?? null });
+          if (!mountedRef.current) return;
+          patches.set(job.jobId, { status, error: status.error ?? null });
         } catch (err) {
+          if (!mountedRef.current) return;
           // A transient read error does not discard the job or stop later polls.
-          updateJob(job.jobId, {
+          patches.set(job.jobId, {
             error: err instanceof Error ? err.message : "Không thể cập nhật trạng thái",
           });
         }
       }
-      if (!jobsRef.current.some((job) => !isTerminal(statusOf(job)))) {
+      if (!mountedRef.current) return;
+      const previous = jobsRef.current;
+      const next = previous.map((job) => ({ ...job, ...patches.get(job.jobId) }));
+      jobsRef.current = next;
+      setJobs(next);
+      const changed = next.filter((job, index) => (
+        statusOf(job) !== statusOf(previous[index])
+        || job.error !== previous[index].error
+      ));
+      if (changed.length > 0) {
+        setAnnouncement(changed.map((job) => (
+          `${job.filename}: ${STATUS_LABELS[statusOf(job)] ?? statusOf(job)}`
+        )).join(". "));
+      }
+      if (!next.some((job) => !isTerminal(statusOf(job)))) {
         stopPolling();
       }
     } finally {
       pollInFlightRef.current = false;
     }
-  }, [stopPolling, updateJob]);
+  }, [stopPolling]);
 
   const startPolling = useCallback(() => {
     if (timerRef.current) return;
@@ -103,10 +122,11 @@ export default function ConvertPage() {
 
   // Clean up the shared timer + object URLs on unmount.
   useEffect(() => {
+    mountedRef.current = true;
     const urls = urlsRef.current;
     return () => {
+      mountedRef.current = false;
       stopPolling();
-      pollInFlightRef.current = false;
       for (const url of urls.values()) URL.revokeObjectURL(url);
       urls.clear();
     };
@@ -133,6 +153,7 @@ export default function ConvertPage() {
       jobsRef.current = next;
       return next;
     });
+    setAnnouncement(`${submittedJobs.length} tệp đã được đưa vào hàng đợi chuyển đổi.`);
     startPolling();
   }, [startPolling]);
 
@@ -155,6 +176,9 @@ export default function ConvertPage() {
 
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-6">
+      <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {announcement}
+      </p>
       <PageHeader
         title="Chuyển đổi PDF"
         meta={<span className="numeric">{jobs.length} tệp</span>}
@@ -204,9 +228,6 @@ export default function ConvertPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <span
-                      role="status"
-                      aria-live="polite"
-                      aria-atomic="true"
                       className={
                         "rounded-pill px-2.5 py-0.5 text-metadata font-medium " +
                         (status === "failed"

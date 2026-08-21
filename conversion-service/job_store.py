@@ -118,6 +118,16 @@ class JobStore:
         self.save(job_id, state)
         return state
 
+    def delete(self, job_id: str) -> None:
+        """Remove one job state from the active backend and memory fallback."""
+        key = self._key(job_id)
+        if self._redis is not None:
+            try:
+                self._redis.delete(key)
+            except Exception as error:  # noqa: BLE001
+                logger.warning("JobStore: Redis delete failed (%s)", error)
+        self._memory.delete(key)
+
     def enqueue(self, job: dict[str, Any]) -> None:
         """Push a job onto the conversion_queue list."""
         payload = json.dumps(job, ensure_ascii=False)

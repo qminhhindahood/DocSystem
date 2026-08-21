@@ -149,3 +149,102 @@ def test_single_and_bulk_dispatch_the_same_owner_scoped_charge_context(
         state = main._LOCAL_JOBS[job_id]
         assert state["userId"] == "context-user"
         assert state["quotaKey"] == expected_key
+
+
+def test_single_dispatch_failure_deletes_source_and_refunds_charge(
+    monkeypatch, tmp_path
+):
+    source = _saved_pdf(tmp_path, "single-dispatch.pdf")
+    quota = QuotaService(redis_client=None, limit=3)
+    monkeypatch.setattr(main, "QUOTA", quota)
+    monkeypatch.setattr(main, "validate_and_save", lambda *_args: str(source))
+    monkeypatch.setattr(main, "check_password", lambda _path: None)
+    monkeypatch.setattr(main, "_has_scanned_pages", lambda _path: False)
+    monkeypatch.setattr(
+        main.config,
+        "ensure_dirs",
+        lambda: (_ for _ in ()).throw(OSError("work directory unavailable")),
+    )
+
+    with TestClient(main.app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/convert",
+            headers={"X-User-Id": "dispatch-user"},
+            files={"file": ("dispatch.pdf", b"%PDF-", "application/pdf")},
+        )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == main.UNEXPECTED_CONVERSION_ERROR
+    assert not source.exists()
+    assert _quota_count(quota, "dispatch-user") == 0
+
+
+def test_bulk_dispatch_failure_is_isolated_and_refunded(monkeypatch, tmp_path):
+    source = _saved_pdf(tmp_path, "bulk-dispatch.pdf")
+    quota = QuotaService(redis_client=None, limit=3)
+    monkeypatch.setattr(main, "QUOTA", quota)
+    monkeypatch.setattr(main, "validate_and_save", lambda *_args: str(source))
+    monkeypatch.setattr(main, "check_password", lambda _path: None)
+    monkeypatch.setattr(main, "_has_scanned_pages", lambda _path: False)
+    monkeypatch.setattr(
+        main.config,
+        "ensure_dirs",
+        lambda: (_ for _ in ()).throw(OSError("work directory unavailable")),
+    )
+
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/convert/bulk",
+            headers={"X-User-Id": "bulk-dispatch-user"},
+            files=[("files", ("dispatch.pdf", b"%PDF-", "application/pdf"))],
+        )
+
+    assert response.status_code == 200
+    assert response.json()["jobs"] == [{
+        "filename": "dispatch.pdf",
+        "jobId": None,
+        "error": main.UNEXPECTED_CONVERSION_ERROR,
+    }]
+    assert not source.exists()
+    assert _quota_count(quota, "bulk-dispatch-user") == 0
+
+
+def test_dispatch_rollback_continues_when_job_state_cleanup_fails(
+    monkeypatch, tmp_path
+):
+    source = _saved_pdf(tmp_path, "persistence-dispatch.pdf")
+    quota = QuotaService(redis_client=None, limit=3)
+    monkeypatch.setattr(main, "QUOTA", quota)
+    monkeypatch.setattr(main, "validate_and_save", lambda *_args: str(source))
+    monkeypatch.setattr(main, "check_password", lambda _path: None)
+    monkeypatch.setattr(main, "_has_scanned_pages", lambda _path: False)
+    monkeypatch.setattr(main.config, "ensure_dirs", lambda: None)
+
+    class BrokenStore:
+        using_redis = True
+
+        @staticmethod
+        def save(*_args, **_kwargs):
+            raise OSError("job state unavailable")
+
+        @staticmethod
+        def delete(*_args, **_kwargs):
+            raise OSError("job state cleanup unavailable")
+
+        @staticmethod
+        def load(_job_id):
+            return None
+
+    monkeypatch.setattr(main, "STORE", BrokenStore())
+
+    with TestClient(main.app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/convert",
+            headers={"X-User-Id": "persistence-user"},
+            files={"file": ("dispatch.pdf", b"%PDF-", "application/pdf")},
+        )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == main.UNEXPECTED_CONVERSION_ERROR
+    assert not source.exists()
+    assert _quota_count(quota, "persistence-user") == 0

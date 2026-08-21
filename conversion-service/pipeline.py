@@ -126,15 +126,19 @@ def _run_scanned_vision(vision: dict, pdf_path: str,
         if raw is None:
             degraded.extend(batch_pages)
             warnings.append(
-                f"pages {batch_label}: Gemini vision returned no usable result"
+                f"Trang {batch_label}: Gemini không trả về kết quả có thể sử dụng."
             )
             continue
         result = validate_chunk(raw)
         if not result.ok:
+            logger.warning(
+                "Gemini validation failed for pages %s: %s",
+                batch_label,
+                result.error_text(),
+            )
             degraded.extend(batch_pages)
             warnings.append(
-                f"pages {batch_label}: Gemini vision output failed validation "
-                f"({result.error_text()})"
+                f"Trang {batch_label}: đầu ra Gemini không vượt qua kiểm tra cấu trúc."
             )
             continue
         returned_pages: set[int] = set()
@@ -144,12 +148,12 @@ def _run_scanned_vision(vision: dict, pdf_path: str,
                     b.page = batch_pages[0]
                 else:
                     warnings.append(
-                        f"pages {batch_label}: discarded a Gemini block without a page"
+                        f"Trang {batch_label}: đã bỏ một khối Gemini không có số trang."
                     )
                     continue
             if b.page not in allowed_pages:
                 warnings.append(
-                    f"pages {batch_label}: discarded Gemini block for page {b.page}"
+                    f"Trang {batch_label}: đã bỏ khối Gemini trả về sai trang {b.page}."
                 )
                 continue
             # Scanned extraction is capped even on a confident transcription.
@@ -160,8 +164,8 @@ def _run_scanned_vision(vision: dict, pdf_path: str,
         if missing_pages:
             degraded.extend(missing_pages)
             warnings.append(
-                f"pages {', '.join(str(page) for page in missing_pages)}: "
-                "Gemini returned no blocks for the selected page"
+                f"Trang {', '.join(str(page) for page in missing_pages)}: "
+                "Gemini không trả về khối nội dung nào."
             )
     return blocks, degraded, warnings
 
@@ -280,8 +284,8 @@ def convert_pdf(pdf_path: str, out_path: str,
                 if rejected_tables:
                     report.status = "completed_with_warnings"
                     report.warnings.append(
-                        f"page {page_no}: {rejected_tables} detected table(s) failed "
-                        "the quality gate and used text fallback"
+                        f"Trang {page_no}: {rejected_tables} bảng không đạt ngưỡng "
+                        "chất lượng; đã dùng văn bản dự phòng."
                     )
             else:  # SCANNED
                 # Gemini vision contract (P1). Collected here, transcribed in
@@ -305,7 +309,7 @@ def convert_pdf(pdf_path: str, out_path: str,
                 for page_no in scanned_pages:
                     report.degraded_pages.append(page_no)
                     report.warnings.append(
-                        f"page {page_no}: scanned page requires Gemini vision (not configured)"
+                        f"Trang {page_no}: trang quét cần Gemini nhưng chưa được cấu hình."
                     )
 
         # Emit the signature block from the LAST page that carried one —
@@ -353,12 +357,12 @@ def convert_pdf(pdf_path: str, out_path: str,
                 report.confidence = 0.0
                 report.status = "failed"
                 report.warnings.append(
-                    "no content blocks were produced from a non-empty text layer"
+                    "Không tạo được khối nội dung từ lớp văn bản hiện có."
                 )
             else:
                 report.confidence = 0.0
                 report.status = "failed"
-                report.warnings.append("document contained no extractable text")
+                report.warnings.append("Tài liệu không có văn bản có thể trích xuất.")
         else:
             block_avg = sum(confs) / len(confs)
             # Coverage caps confidence: emitting 40% of the source text can
@@ -367,8 +371,8 @@ def convert_pdf(pdf_path: str, out_path: str,
             if report.coverage < config.COVERAGE_WARN_THRESHOLD:
                 report.status = "completed_with_warnings"
                 report.warnings.append(
-                    f"content coverage is {report.coverage:.0%} of the extracted "
-                    f"text layer ({report.output_chars}/{report.extracted_chars} chars)"
+                    f"Độ bao phủ nội dung là {report.coverage:.0%} so với lớp văn bản "
+                    f"đã trích xuất ({report.output_chars}/{report.extracted_chars} ký tự)."
                 )
 
         if report.degraded_pages:
@@ -383,8 +387,8 @@ def convert_pdf(pdf_path: str, out_path: str,
         ):
             report.status = "completed_with_warnings"
             report.warnings.append(
-                f"document confidence is {report.confidence:.0%}, below the "
-                f"{config.DOC_WARN_THRESHOLD:.0%} delivery threshold"
+                f"Độ tin cậy toàn tài liệu là {report.confidence:.0%}, thấp hơn "
+                f"ngưỡng bàn giao {config.DOC_WARN_THRESHOLD:.0%}."
             )
         report.timings["total_s"] = round(time.time() - t0, 3)
 

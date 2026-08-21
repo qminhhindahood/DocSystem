@@ -1,4 +1,4 @@
-"""Retention lifecycle for job-scoped DOCX results and extracted media."""
+"""Retention lifecycle for uploads, job-scoped DOCX results, and media."""
 from __future__ import annotations
 
 import logging
@@ -66,9 +66,25 @@ def _expired(path: Path, cutoff: float) -> bool:
 
 
 def cleanup_expired_artifacts(now: Optional[float] = None) -> int:
-    """Remove direct job artifacts older than FILE_TTL_S; return path count."""
+    """Remove conversion artifacts older than FILE_TTL_S; return path count."""
     cutoff = (time.time() if now is None else now) - config.FILE_TTL_S
     removed = 0
+    if config.UPLOAD_DIR.is_dir():
+        try:
+            upload_paths = list(config.UPLOAD_DIR.glob("conv_*.pdf"))
+        except OSError as exc:
+            logger.warning("could not scan upload directory %s: %s", config.UPLOAD_DIR, exc)
+            upload_paths = []
+        for upload_path in upload_paths:
+            if not _expired(upload_path, cutoff):
+                continue
+            try:
+                upload_path.unlink()
+                removed += 1
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                logger.warning("could not expire upload %s: %s", upload_path, exc)
     if config.OUTPUT_DIR.is_dir():
         try:
             output_paths = list(config.OUTPUT_DIR.glob("*.docx"))

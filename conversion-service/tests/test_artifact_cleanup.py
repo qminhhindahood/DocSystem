@@ -10,14 +10,17 @@ from pipeline import ConversionReport
 
 
 def _configure_work_dirs(monkeypatch, tmp_path):
+    upload_dir = tmp_path / "uploads"
     output_dir = tmp_path / "outputs"
     media_dir = tmp_path / "media"
+    upload_dir.mkdir()
     output_dir.mkdir()
     media_dir.mkdir()
+    monkeypatch.setattr(config, "UPLOAD_DIR", upload_dir)
     monkeypatch.setattr(config, "OUTPUT_DIR", output_dir)
     monkeypatch.setattr(config, "MEDIA_DIR", media_dir)
     monkeypatch.setattr(config, "FILE_TTL_S", 60)
-    return output_dir, media_dir
+    return upload_dir, output_dir, media_dir
 
 
 def test_in_process_runner_always_removes_source_upload(monkeypatch, tmp_path):
@@ -31,13 +34,20 @@ def test_in_process_runner_always_removes_source_upload(monkeypatch, tmp_path):
         lambda pdf_path, out_path, media_dir, vision: (out_path, report),
     )
 
-    asyncio.run(main._run_job_in_process("source-cleanup", str(source), "doc.pdf"))
+    asyncio.run(main._run_job_in_process(main.AdmittedJob(
+        job_id="source-cleanup",
+        pdf_path=str(source),
+        filename="doc.pdf",
+        user_id=None,
+        vision=None,
+        quota_charge=None,
+    )))
 
     assert not source.exists()
 
 
 def test_expiry_sweep_removes_only_old_job_artifacts(monkeypatch, tmp_path):
-    output_dir, media_dir = _configure_work_dirs(monkeypatch, tmp_path)
+    upload_dir, output_dir, media_dir = _configure_work_dirs(monkeypatch, tmp_path)
     from artifact_cleanup import cleanup_expired_artifacts
 
     expired_output = output_dir / "expired.docx"
@@ -52,23 +62,31 @@ def test_expiry_sweep_removes_only_old_job_artifacts(monkeypatch, tmp_path):
     (fresh_media / "seal.png").write_bytes(b"new")
     unrelated = output_dir / "keep.txt"
     unrelated.write_text("not a conversion result", encoding="utf-8")
+    expired_upload = upload_dir / "conv_expired.pdf"
+    expired_upload.write_bytes(b"old upload")
+    fresh_upload = upload_dir / "conv_fresh.pdf"
+    fresh_upload.write_bytes(b"fresh upload")
     os.utime(expired_output, (900, 900))
     os.utime(expired_media, (900, 900))
     os.utime(fresh_output, (960, 960))
     os.utime(fresh_media, (960, 960))
+    os.utime(expired_upload, (900, 900))
+    os.utime(fresh_upload, (960, 960))
 
     removed = cleanup_expired_artifacts(now=1000)
 
-    assert removed == 2
+    assert removed == 3
     assert not expired_output.exists()
     assert not expired_media.exists()
     assert fresh_output.exists()
     assert fresh_media.exists()
     assert unrelated.exists()
+    assert not expired_upload.exists()
+    assert fresh_upload.exists()
 
 
 def test_marking_completion_starts_retention_from_completion(monkeypatch, tmp_path):
-    output_dir, media_dir = _configure_work_dirs(monkeypatch, tmp_path)
+    _upload_dir, output_dir, media_dir = _configure_work_dirs(monkeypatch, tmp_path)
     from artifact_cleanup import mark_job_artifacts_complete
 
     output = output_dir / "marked.docx"

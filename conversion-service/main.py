@@ -37,6 +37,7 @@ from admission import (
     AdmissionError,
     AdmittedJob,
     admit_upload,
+    delete_source,
 )
 from artifact_cleanup import (
     cleanup_expired_artifacts,
@@ -154,73 +155,69 @@ def _record_job_metrics(report) -> None:
     METRICS.record_outcome(report.status)
 
 
-def _refund_local_once(
-    job_id: str,
-    user_id: Optional[str] = None,
-    quota_key: Optional[str] = None,
-) -> None:
+def _refund_local_once(job: AdmittedJob) -> None:
     """Refund one failed local job using the charge captured at admission."""
-    state = _LOCAL_JOBS.get(job_id) or {}
-    owner = user_id or state.get("userId")
-    charge_key = quota_key or state.get("quotaKey")
-    if not owner or not charge_key or state.get("quotaRefunded"):
+    state = _LOCAL_JOBS.get(job.job_id) or {}
+    if not job.user_id or not job.quota_key or state.get("quotaRefunded"):
         return
-    _local_job(job_id, quotaRefunded=True)
-    QUOTA.refund_charge(charge_key)
-
-
-async def _run_job_in_process(job_id: str, pdf_path: str, filename: str,
-                              vision: Optional[dict[str, Any]] = None,
-                              user_id: Optional[str] = None,
-                              quota_key: Optional[str] = None) -> None:
-    context_fields: dict[str, Any] = {}
-    if user_id is not None:
-        context_fields["userId"] = user_id
-    if quota_key is not None:
-        context_fields["quotaKey"] = quota_key
-    _local_job(job_id, status="processing", progress=0.1, **context_fields)
-    out_path = str(config.OUTPUT_DIR / f"{job_id}.docx")
+    refund_key = f"{config.JOB_STATE_PREFIX}{job.job_id}:refunded"
     try:
-        _local_job(job_id, progress=0.3)
-        docx_path, report = await asyncio.to_thread(
-            convert_pdf, pdf_path, out_path, str(config.MEDIA_DIR / job_id), vision
+        QUOTA.refund_charge_once(
+            refund_key,
+            job.quota_key,
+            ttl_s=config.JOB_STATE_TTL_S,
         )
-        _local_job(job_id, progress=1.0)
+    except Exception as error:  # noqa: BLE001
+        logger.warning("quota refund failed for local job %s: %s", job.job_id, error)
+        return
+    _local_job(job.job_id, quotaRefunded=True)
+
+
+async def _run_job_in_process(job: AdmittedJob) -> None:
+    _local_job(job.job_id, **{**job.state(), "status": "processing", "progress": 0.1})
+    out_path = str(config.OUTPUT_DIR / f"{job.job_id}.docx")
+    try:
+        _local_job(job.job_id, progress=0.3)
+        docx_path, report = await asyncio.to_thread(
+            convert_pdf,
+            job.pdf_path,
+            out_path,
+            str(config.MEDIA_DIR / job.job_id),
+            job.vision,
+        )
+        _local_job(job.job_id, progress=1.0)
         _record_job_metrics(report)
         if report.status == "failed":
-            _local_job(job_id, status="failed", report=asdict(report))
-            delete_job_artifacts(job_id)
-            _refund_local_once(job_id, user_id, quota_key)
+            _local_job(job.job_id, status="failed", report=asdict(report))
+            delete_job_artifacts(job.job_id)
+            _refund_local_once(job)
         else:
-            mark_job_artifacts_complete(job_id)
-            _local_job(job_id, status=report.status, resultUrl=f"/convert/{job_id}/result",
+            mark_job_artifacts_complete(job.job_id)
+            _local_job(job.job_id, status=report.status, resultUrl=f"/convert/{job.job_id}/result",
                        confidence=round(report.confidence, 3),
                        degradedPages=report.degraded_pages, report=asdict(report))
     except IntakeError as e:
         METRICS.inc("conversion_jobs_total", status="failed")
         METRICS.record_outcome("failed")
-        _local_job(job_id, status="failed", error=e.detail)
-        delete_job_artifacts(job_id)
-        _refund_local_once(job_id, user_id, quota_key)
+        _local_job(job.job_id, status="failed", error=e.detail)
+        delete_job_artifacts(job.job_id)
+        _refund_local_once(job)
     except VisionAuthError:
-        logger.exception("conversion job %s rejected the Gemini key", job_id)
+        logger.exception("conversion job %s rejected the Gemini key", job.job_id)
         METRICS.inc("conversion_jobs_total", status="failed")
         METRICS.record_outcome("failed")
-        _local_job(job_id, status="failed", error=VISION_AUTH_FAILED_DETAIL)
-        delete_job_artifacts(job_id)
-        _refund_local_once(job_id, user_id, quota_key)
+        _local_job(job.job_id, status="failed", error=VISION_AUTH_FAILED_DETAIL)
+        delete_job_artifacts(job.job_id)
+        _refund_local_once(job)
     except Exception:  # noqa: BLE001
-        logger.exception("conversion job %s failed", job_id)
+        logger.exception("conversion job %s failed", job.job_id)
         METRICS.inc("conversion_jobs_total", status="failed")
         METRICS.record_outcome("failed")
-        _local_job(job_id, status="failed", error=UNEXPECTED_CONVERSION_ERROR)
-        delete_job_artifacts(job_id)
-        _refund_local_once(job_id, user_id, quota_key)
+        _local_job(job.job_id, status="failed", error=UNEXPECTED_CONVERSION_ERROR)
+        delete_job_artifacts(job.job_id)
+        _refund_local_once(job)
     finally:
-        try:
-            Path(pdf_path).unlink(missing_ok=True)
-        except OSError:
-            pass
+        delete_source(job.pdf_path)
 
 
 def _admit_upload(
@@ -242,34 +239,51 @@ def _admit_upload(
 
 def _dispatch_job(job: AdmittedJob) -> str:
     """Persist and dispatch one admitted job through queue or local mode."""
-    config.ensure_dirs()
-    state = job.state()
-    if STORE.using_redis:
-        STORE.save(job.job_id, state)
-        try:
-            STORE.enqueue(job.payload())
-        except RuntimeError:
-            _local_job(job.job_id, **state)
-            asyncio.create_task(_run_job_in_process(
-                job.job_id,
-                job.pdf_path,
-                job.filename,
-                job.vision,
-                job.user_id,
-                job.quota_key,
-            ))
-        return "queue"
+    try:
+        config.ensure_dirs()
+        state = job.state()
+        if STORE.using_redis:
+            STORE.save(job.job_id, state)
+            try:
+                STORE.enqueue(job.payload())
+                return "queue"
+            except RuntimeError:
+                pass
 
-    _local_job(job.job_id, **state)
-    asyncio.create_task(_run_job_in_process(
-        job.job_id,
-        job.pdf_path,
-        job.filename,
-        job.vision,
-        job.user_id,
-        job.quota_key,
-    ))
-    return "in-process"
+        _local_job(job.job_id, **state)
+        coroutine = _run_job_in_process(job)
+        try:
+            asyncio.create_task(coroutine)
+        except Exception:
+            coroutine.close()
+            raise
+        return "in-process"
+    except Exception as error:
+        logger.exception("conversion job %s could not be dispatched", job.job_id)
+        try:
+            STORE.delete(job.job_id)
+        except Exception as cleanup_error:  # noqa: BLE001
+            logger.error(
+                "job state cleanup failed for undispatched job %s: %s",
+                job.job_id,
+                cleanup_error,
+            )
+        _LOCAL_JOBS.pop(job.job_id, None)
+        if job.quota_key:
+            try:
+                QUOTA.refund_charge_once(
+                    f"{config.JOB_STATE_PREFIX}{job.job_id}:refunded",
+                    job.quota_key,
+                    ttl_s=config.JOB_STATE_TTL_S,
+                )
+            except Exception as refund_error:  # noqa: BLE001
+                logger.error(
+                    "quota rollback failed for undispatched job %s: %s",
+                    job.job_id,
+                    refund_error,
+                )
+        delete_source(job.pdf_path)
+        raise AdmissionError(500, UNEXPECTED_CONVERSION_ERROR) from error
 
 
 @app.get("/health")
@@ -332,9 +346,9 @@ async def convert(
     vision_config = _parse_vision(vision)
     try:
         job = _admit_upload(file, x_user_id, vision_config)
+        mode = _dispatch_job(job)
     except (IntakeError, AdmissionError) as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail)
-    mode = _dispatch_job(job)
     return {"jobId": job.job_id, "mode": mode}
 
 
@@ -430,6 +444,7 @@ async def convert_bulk(
     for file in files:
         try:
             job = _admit_upload(file, x_user_id, vision_config)
+            _dispatch_job(job)
         except (IntakeError, AdmissionError) as error:
             results.append({
                 "filename": file.filename,
@@ -437,7 +452,6 @@ async def convert_bulk(
                 "error": error.detail,
             })
             continue
-        _dispatch_job(job)
         results.append({"filename": file.filename, "jobId": job.job_id, "error": None})
     METRICS.inc("conversion_bulk_requests_total")
     return {"jobs": results, "count": len(results)}

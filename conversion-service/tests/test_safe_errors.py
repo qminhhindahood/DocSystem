@@ -57,7 +57,14 @@ def test_in_process_runner_stores_safe_message_for_unexpected_failure(
 
     monkeypatch.setattr(main, "convert_pdf", crash)
 
-    asyncio.run(main._run_job_in_process("safe-local", str(source), "local.pdf"))
+    asyncio.run(main._run_job_in_process(main.AdmittedJob(
+        job_id="safe-local",
+        pdf_path=str(source),
+        filename="local.pdf",
+        user_id=None,
+        vision=None,
+        quota_charge=None,
+    )))
 
     assert main._LOCAL_JOBS["safe-local"]["error"] == SAFE_ERROR
 
@@ -73,6 +80,13 @@ def test_in_process_runner_preserves_gemini_auth_message(monkeypatch, tmp_path):
 
     monkeypatch.setattr(main, "convert_pdf", reject_key)
 
-    asyncio.run(main._run_job_in_process("auth-local", str(source), "auth.pdf"))
+    asyncio.run(main._run_job_in_process(main.AdmittedJob(
+        job_id="auth-local",
+        pdf_path=str(source),
+        filename="auth.pdf",
+        user_id=None,
+        vision=None,
+        quota_charge=None,
+    )))
 
     assert main._LOCAL_JOBS["auth-local"]["error"] == worker.VISION_AUTH_FAILED_DETAIL
