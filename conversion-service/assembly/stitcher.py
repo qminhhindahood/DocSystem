@@ -189,6 +189,17 @@ def consolidate_sections(blocks: list[Block]) -> list[Block]:
 def assemble(blocks: list[Block], doc=None, media_dir=None,
              page_index_map: Optional[dict[int, int]] = None) -> list[Block]:
     """Run the full assembly pipeline in order."""
+    # Digital pages are extracted during the page walk, while scanned pages
+    # arrive after batched vision completes. Normalize that merged stream once
+    # before cross-page transforms. Python's stable sort preserves extraction
+    # order for multiple blocks on the same page.
+    blocks = sorted(
+        blocks,
+        key=lambda block: (
+            getattr(block, "page", None) is None,
+            getattr(block, "page", 0) or 0,
+        ),
+    )
     blocks = fill_anchor_blocks(blocks)
     if doc is not None and media_dir is not None and page_index_map is not None:
         blocks = fill_scanned_src(blocks, doc, media_dir, page_index_map)
