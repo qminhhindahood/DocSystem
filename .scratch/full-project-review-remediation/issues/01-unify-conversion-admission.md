@@ -9,4 +9,3 @@
 - [ ] Single and bulk submissions use one admission contract for validation, scanned-page eligibility, quota charging, and execution dispatch.
 - [ ] The admitted execution context identifies the owning user and the exact quota charge without changing successful conversion behaviour.
 - [ ] Queue and in-process adapters consume the same context, with parity tests covering both submission modes and both execution modes.
-

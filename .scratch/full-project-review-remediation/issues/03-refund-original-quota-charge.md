@@ -9,4 +9,3 @@
 - [ ] Queue-backed and in-process failures refund the original charged quota bucket exactly once.
 - [ ] A job admitted before UTC midnight and failed afterward restores the earlier day's charge without changing the new day's usage.
 - [ ] Successful jobs are never refunded, and repeated terminal handling cannot create extra quota capacity.
-

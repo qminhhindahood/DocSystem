@@ -9,4 +9,3 @@
 - [ ] Infrastructure, RAG, Ollama, workflow, and other master-stack phase documents are no longer present in the working tree.
 - [ ] The repository contract suite fails if the removed archive or equivalent master-stack documentation is reintroduced.
 - [ ] Active standalone documentation and contributor wayfinding continue to resolve without links to removed material.
-

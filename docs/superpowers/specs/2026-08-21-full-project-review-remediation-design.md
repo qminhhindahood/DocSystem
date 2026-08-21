@@ -121,4 +121,3 @@ The shared admission context lands first. Ownership, exact-charge refunds, and
 source cleanup follow because they consume that seam. Page ordering, polling,
 reporting, accessibility, OpenRouter removal, and archive removal have no
 logical blockers and can then be completed as independent testable slices.
-

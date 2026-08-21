@@ -9,4 +9,3 @@
 - [ ] Polling traffic has a rate-limit policy or aggregation strategy sized for the documented single and ten-job bulk workflows.
 - [ ] General API abuse protection remains active for non-polling endpoints.
 - [ ] Polling stops for terminal jobs and unmounted views, with tests proving sustained bulk monitoring does not receive routine HTTP 429 responses.
-

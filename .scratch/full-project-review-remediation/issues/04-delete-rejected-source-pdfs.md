@@ -9,4 +9,3 @@
 - [ ] Password-protected PDFs and scanned-page eligibility rejections remove their saved source before the response completes.
 - [ ] Unexpected PDF inspection failures also remove the saved source while returning the established safe error contract.
 - [ ] Bulk intake cleans each rejected item independently without deleting accepted jobs, and all rejected items remain free.
-

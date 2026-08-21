@@ -9,4 +9,3 @@
 - [ ] In-process job state retains the same owner identity as queue-backed job state throughout the lifecycle.
 - [ ] The submitting user can poll, inspect, and download an in-process result through the normal backend API.
 - [ ] A different authenticated user cannot read or download that job, with regression coverage for queue-unavailable execution.
-
