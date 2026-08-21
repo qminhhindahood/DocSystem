@@ -75,6 +75,7 @@ export interface ConversionReport {
   jobId: string;
   status: string | null;
   confidence: number | null;
+  coverage: number | null;
   degradedPages: number[];
   flaggedBlocks: FlaggedBlock[];
   lowConfidencePages: LowConfidencePage[];

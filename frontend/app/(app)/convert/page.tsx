@@ -287,6 +287,14 @@ export default function ConvertPage() {
                                   {((job.report.confidence ?? 0) * 100).toFixed(0)}%
                                 </strong>
                               </span>
+                              <span>
+                                Độ bao phủ:{" "}
+                                <strong className="text-text-primary">
+                                  {job.report.coverage == null
+                                    ? "Không có dữ liệu"
+                                    : `${(job.report.coverage * 100).toFixed(0)}%`}
+                                </strong>
+                              </span>
                               <span>Phân loại lại (demote): <strong className="text-text-primary">{job.report.demotions}</strong></span>
                               {job.report.degradedPages.length > 0 && (
                                 <span>
@@ -304,6 +312,17 @@ export default function ConvertPage() {
                                     <li key={p.page}>
                                       Trang {p.page} — {((p.avg_confidence) * 100).toFixed(0)}% ({p.blocks} khối)
                                     </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
+                            {job.report.warnings.length > 0 && (
+                              <div>
+                                <p className="font-medium text-warning">Cảnh báo chuyển đổi:</p>
+                                <ul className="list-inside list-disc space-y-1 text-text-primary">
+                                  {job.report.warnings.map((warning, index) => (
+                                    <li key={`${index}-${warning}`}>{warning}</li>
                                   ))}
                                 </ul>
                               </div>

@@ -397,6 +397,7 @@ async def convert_report(job_id: str) -> dict[str, Any]:
         "jobId": job_id,
         "status": job.get("status"),
         "confidence": job.get("confidence"),
+        "coverage": report.get("coverage"),
         "degradedPages": job.get("degradedPages", []),
         "userId": job.get("userId"),
         "flaggedBlocks": report.get("flagged_blocks", []),

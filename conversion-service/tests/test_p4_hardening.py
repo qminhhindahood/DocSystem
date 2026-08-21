@@ -9,6 +9,31 @@ from pipeline import _flagged_blocks, _low_confidence_pages
 from schema.blocks import ParagraphBlock
 
 
+def test_report_endpoint_includes_coverage_and_warnings():
+    import main
+    from fastapi.testclient import TestClient
+
+    main._LOCAL_JOBS["honest-report"] = {
+        "jobId": "honest-report",
+        "status": "completed_with_warnings",
+        "progress": 1.0,
+        "confidence": 0.55,
+        "userId": "report-user",
+        "report": {
+            "coverage": 0.64,
+            "warnings": ["table fallback", "low confidence"],
+        },
+    }
+    try:
+        with TestClient(main.app) as client:
+            response = client.get("/convert/honest-report/report")
+        assert response.status_code == 200
+        assert response.json()["coverage"] == 0.64
+        assert response.json()["warnings"] == ["table fallback", "low confidence"]
+    finally:
+        main._LOCAL_JOBS.pop("honest-report", None)
+
+
 def test_metrics_counters_and_prometheus():
     m = Metrics()
     m.inc("conversion_jobs_total", status="completed")

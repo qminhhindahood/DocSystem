@@ -236,6 +236,7 @@ describe('convert API contract', () => {
     });
     mockGetConversionReport.mockResolvedValue({
       jobId: 'job-1', status: 'completed_with_warnings', confidence: 0.72,
+      coverage: 0.64,
       degradedPages: [3],
       flaggedBlocks: [{ index: 4, type: 'paragraph', page: 2, confidence: 0.4, preview: 'mờ' }],
       lowConfidencePages: [{ page: 2, avg_confidence: 0.55, blocks: 6 }],
@@ -250,6 +251,7 @@ describe('convert API contract', () => {
       expect(body.flaggedBlocks).toHaveLength(1);
       expect(body.lowConfidencePages[0].page).toBe(2);
       expect(body.demotions).toBe(1);
+      expect(body.coverage).toBe(0.64);
     });
   });
 

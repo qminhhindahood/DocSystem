@@ -80,6 +80,7 @@ export interface ConversionReport {
   jobId: string;
   status: string | null;
   confidence: number | null;
+  coverage: number | null;
   degradedPages: number[];
   /** Owning user id — used to owner-scope reads (ticket 03); never echoed to clients. */
   userId?: string | null;
