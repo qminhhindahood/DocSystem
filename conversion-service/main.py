@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import uuid
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
 from pathlib import Path
@@ -33,6 +32,12 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 import config
+from admission import (
+    SCANNED_NO_VISION_DETAIL,
+    AdmissionError,
+    AdmittedJob,
+    admit_upload,
+)
 from artifact_cleanup import (
     cleanup_expired_artifacts,
     delete_job_artifacts,
@@ -103,13 +108,6 @@ def _local_job(job_id: str, **fields: Any) -> dict[str, Any]:
 # form field. The server itself holds no vision key: a scanned upload without
 # one is rejected up front (422) BEFORE quota is charged, with instructions.
 
-SCANNED_NO_VISION_DETAIL = (
-    "Tài liệu có trang quét (scanned) nhưng chưa có khóa API Google Gemini. "
-    "Hãy vào Cài đặt (biểu tượng bánh răng ở thanh bên) và cấu hình khóa API "
-    "Google Gemini của bạn, sau đó thử lại."
-)
-
-
 def _parse_vision(raw: Optional[str]) -> Optional[dict[str, Any]]:
     """Decode the optional 'vision' form field. Invalid input -> absent."""
     if not raw:
@@ -157,7 +155,9 @@ def _record_job_metrics(report) -> None:
 
 
 async def _run_job_in_process(job_id: str, pdf_path: str, filename: str,
-                              vision: Optional[dict[str, Any]] = None) -> None:
+                              vision: Optional[dict[str, Any]] = None,
+                              user_id: Optional[str] = None,
+                              quota_key: Optional[str] = None) -> None:
     _local_job(job_id, status="processing", progress=0.1)
     out_path = str(config.OUTPUT_DIR / f"{job_id}.docx")
     try:
@@ -197,6 +197,55 @@ async def _run_job_in_process(job_id: str, pdf_path: str, filename: str,
             Path(pdf_path).unlink(missing_ok=True)
         except OSError:
             pass
+
+
+def _admit_upload(
+    file: UploadFile,
+    user_id: Optional[str],
+    vision: Optional[dict[str, Any]],
+) -> AdmittedJob:
+    return admit_upload(
+        file.file,
+        file.filename,
+        user_id,
+        vision,
+        QUOTA,
+        validate=validate_and_save,
+        password_check=check_password,
+        scanned_detector=_has_scanned_pages,
+    )
+
+
+def _dispatch_job(job: AdmittedJob) -> str:
+    """Persist and dispatch one admitted job through queue or local mode."""
+    config.ensure_dirs()
+    state = job.state()
+    if STORE.using_redis:
+        STORE.save(job.job_id, state)
+        try:
+            STORE.enqueue(job.payload())
+        except RuntimeError:
+            _local_job(job.job_id, **state)
+            asyncio.create_task(_run_job_in_process(
+                job.job_id,
+                job.pdf_path,
+                job.filename,
+                job.vision,
+                job.user_id,
+                job.quota_key,
+            ))
+        return "queue"
+
+    _local_job(job.job_id, **state)
+    asyncio.create_task(_run_job_in_process(
+        job.job_id,
+        job.pdf_path,
+        job.filename,
+        job.vision,
+        job.user_id,
+        job.quota_key,
+    ))
+    return "in-process"
 
 
 @app.get("/health")
@@ -256,63 +305,13 @@ async def convert(
     vision: Optional[str] = Form(default=None),
 ) -> dict[str, Any]:
     """Accept a PDF upload, start a conversion job, return its jobId."""
-    # Validate + password-check FIRST so rejected uploads never consume quota
-    # (plan §8: the daily cap counts successful conversions, not garbage).
-    try:
-        pdf_path = validate_and_save(file.file, file.filename)
-        # Option A (plan §7): reject pre-locked PDFs here, at Ingest.
-        check_password(pdf_path)
-    except IntakeError as e:
-        raise HTTPException(status_code=e.status_code, detail=e.detail)
-
-    # BYOK vision gate (still before quota): scanned pages need the user's own
-    # Gemini key. Without one, reject up front with instructions — free.
     vision_config = _parse_vision(vision)
-    if vision_config is None and _has_scanned_pages(pdf_path):
-        try:
-            Path(pdf_path).unlink()
-        except OSError:
-            pass
-        raise HTTPException(status_code=422, detail=SCANNED_NO_VISION_DETAIL)
-
-    # Per-user daily quota (plan §8) — charged only after validation passes;
-    # the just-saved staging file is removed if quota denies the upload so a
-    # rejected file never lingers on disk.
-    if x_user_id:
-        allowed, remaining = QUOTA.check_and_increment(x_user_id)
-        if not allowed:
-            try:
-                Path(pdf_path).unlink()
-            except OSError:
-                pass
-            raise HTTPException(
-                status_code=429,
-                detail=f"Daily conversion quota exceeded ({QUOTA.limit} docs/day)",
-            )
-
-    job_id = uuid.uuid4().hex
-    config.ensure_dirs()
-
-    if STORE.using_redis:
-        # Queue mode: persist state + enqueue for the worker.
-        STORE.save(job_id, {
-            "jobId": job_id, "status": "queued", "progress": 0.0,
-            "filename": file.filename, "userId": x_user_id,
-        })
-        try:
-            STORE.enqueue({"jobId": job_id, "pdfPath": pdf_path,
-                           "filename": file.filename, "userId": x_user_id,
-                           "vision": vision_config})
-        except RuntimeError:
-            # Redis vanished between check and enqueue — fall back in-process.
-            _local_job(job_id, status="queued", filename=file.filename)
-            asyncio.create_task(_run_job_in_process(job_id, pdf_path, file.filename or "upload.pdf", vision_config))
-        return {"jobId": job_id, "mode": "queue"}
-
-    # In-process dev mode
-    _local_job(job_id, status="queued", filename=file.filename)
-    asyncio.create_task(_run_job_in_process(job_id, pdf_path, file.filename or "upload.pdf", vision_config))
-    return {"jobId": job_id, "mode": "in-process"}
+    try:
+        job = _admit_upload(file, x_user_id, vision_config)
+    except (IntakeError, AdmissionError) as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail)
+    mode = _dispatch_job(job)
+    return {"jobId": job.job_id, "mode": mode}
 
 
 def _find_job(job_id: str) -> Optional[dict[str, Any]]:
@@ -404,54 +403,17 @@ async def convert_bulk(
     vision_config = _parse_vision(vision)
     results: list[dict[str, Any]] = []
     for file in files:
-        # Validate first so a bad file never consumes quota.
         try:
-            pdf_path = validate_and_save(file.file, file.filename)
-            check_password(pdf_path)
-        except IntakeError as e:
-            results.append({"filename": file.filename, "jobId": None, "error": e.detail})
+            job = _admit_upload(file, x_user_id, vision_config)
+        except (IntakeError, AdmissionError) as error:
+            results.append({
+                "filename": file.filename,
+                "jobId": None,
+                "error": error.detail,
+            })
             continue
-
-        # BYOK vision gate per file (before quota): scanned pages need the
-        # user's own Gemini key; rejected files cost nothing.
-        if vision_config is None and _has_scanned_pages(pdf_path):
-            try:
-                Path(pdf_path).unlink()
-            except OSError:
-                pass
-            results.append({"filename": file.filename, "jobId": None,
-                            "error": SCANNED_NO_VISION_DETAIL})
-            continue
-
-        if x_user_id:
-            allowed, _remaining = QUOTA.check_and_increment(x_user_id)
-            if not allowed:
-                try:
-                    Path(pdf_path).unlink()
-                except OSError:
-                    pass
-                results.append({
-                    "filename": file.filename, "jobId": None,
-                    "error": f"Daily conversion quota exceeded ({QUOTA.limit} docs/day)",
-                })
-                continue
-
-        job_id = uuid.uuid4().hex
-        config.ensure_dirs()
-        if STORE.using_redis:
-            STORE.save(job_id, {"jobId": job_id, "status": "queued", "progress": 0.0,
-                                "filename": file.filename, "userId": x_user_id})
-            try:
-                STORE.enqueue({"jobId": job_id, "pdfPath": pdf_path,
-                               "filename": file.filename, "userId": x_user_id,
-                               "vision": vision_config})
-            except RuntimeError:
-                _local_job(job_id, status="queued", filename=file.filename)
-                asyncio.create_task(_run_job_in_process(job_id, pdf_path, file.filename or "upload.pdf", vision_config))
-        else:
-            _local_job(job_id, status="queued", filename=file.filename)
-            asyncio.create_task(_run_job_in_process(job_id, pdf_path, file.filename or "upload.pdf", vision_config))
-        results.append({"filename": file.filename, "jobId": job_id, "error": None})
+        _dispatch_job(job)
+        results.append({"filename": file.filename, "jobId": job.job_id, "error": None})
     METRICS.inc("conversion_bulk_requests_total")
     return {"jobs": results, "count": len(results)}
 
