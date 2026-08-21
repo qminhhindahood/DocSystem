@@ -204,6 +204,9 @@ export default function ConvertPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <span
+                      role="status"
+                      aria-live="polite"
+                      aria-atomic="true"
                       className={
                         "rounded-pill px-2.5 py-0.5 text-metadata font-medium " +
                         (status === "failed"
@@ -219,7 +222,7 @@ export default function ConvertPage() {
                       <a
                         href={conversionResultUrl(job.jobId)}
                         download
-                        className="inline-flex min-h-9 items-center gap-1.5 rounded-control bg-action px-3 text-control font-semibold text-on-action hover:bg-action-hover"
+                        className="inline-flex min-h-11 items-center gap-1.5 rounded-control bg-action px-3 text-control font-semibold text-on-action hover:bg-action-hover"
                       >
                         <Download className="h-4 w-4" aria-hidden="true" />
                         Tải DOCX
@@ -267,7 +270,7 @@ export default function ConvertPage() {
                     <button
                       type="button"
                       onClick={() => toggleReport(job.jobId)}
-                      className="inline-flex min-h-8 items-center gap-1.5 rounded-control bg-surface-strong px-3 text-control font-medium text-text-secondary hover:bg-surface hover:text-text-primary"
+                      className="inline-flex min-h-11 items-center gap-1.5 rounded-control bg-surface-strong px-3 text-control font-medium text-text-secondary hover:bg-surface hover:text-text-primary"
                     >
                       <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
                       {job.reportOpen ? "Ẩn kết quả kiểm tra" : "Xem kết quả kiểm tra độ tin cậy"}
@@ -384,7 +387,7 @@ export default function ConvertPage() {
                       <a
                         href={conversionResultUrl(job.jobId)}
                         download
-                        className="inline-flex min-h-9 items-center gap-1.5 rounded-control bg-action px-4 text-control font-semibold text-on-action hover:bg-action-hover"
+                        className="inline-flex min-h-11 items-center gap-1.5 rounded-control bg-action px-4 text-control font-semibold text-on-action hover:bg-action-hover"
                       >
                         <Download className="h-4 w-4" aria-hidden="true" />
                         Tải xuống

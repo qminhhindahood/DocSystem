@@ -73,7 +73,14 @@ describe('conversion delivery report', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Inject warning job' }));
     await act(async () => vi.advanceTimersByTimeAsync(1_500));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Xem kết quả kiểm tra độ tin cậy' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Hoàn thành (có cảnh báo)');
+    const reportButton = screen.getByRole('button', { name: 'Xem kết quả kiểm tra độ tin cậy' });
+    expect(reportButton).toHaveClass('min-h-11');
+    for (const download of screen.getAllByRole('link', { name: /Tải/ })) {
+      expect(download).toHaveClass('min-h-11');
+    }
+
+    fireEvent.click(reportButton);
     await act(async () => Promise.resolve());
 
     expect(screen.getByText(/Độ bao phủ:/)).toHaveTextContent('64%');
