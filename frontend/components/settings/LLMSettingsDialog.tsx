@@ -44,7 +44,7 @@ export function LLMSettingsDialog() {
       <Dialog.Content className="fixed left-1/2 top-1/2 z-modal max-h-[90vh] w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-panel bg-surface-strong p-5 shadow-floating focus:outline-none sm:p-6" aria-describedby="llm-settings-description">
         <div className="mb-5 pr-10">
           <Dialog.Title className="text-section-title text-text-primary">Cấu hình khóa API</Dialog.Title>
-          <Dialog.Description id="llm-settings-description" className="mt-1 text-control text-text-muted">Khóa của bạn được lưu riêng cho tài khoản này. Khóa Google Gemini dùng để chuyển đổi PDF có trang quét (scanned); OpenRouter được lưu cho tính năng hỏi đáp sắp ra mắt.</Dialog.Description>
+          <Dialog.Description id="llm-settings-description" className="mt-1 text-control text-text-muted">Khóa Google Gemini được mã hóa và lưu riêng cho tài khoản này để chuyển đổi PDF có trang quét (scanned).</Dialog.Description>
         </div>
         <button type="button" onClick={() => requestOpen(false)} aria-label="Đóng cài đặt" className="absolute right-4 top-4 rounded-compact p-2 text-text-muted hover:bg-surface-strong hover:text-text-primary"><X className="h-4 w-4" /></button>
         <div hidden={confirmDiscard}><LLMProviderForm onDirtyChange={(value) => { dirtyRef.current = value; }} onSaved={() => { dirtyRef.current = false; setOpen(false); toast({ title: 'Đã lưu cấu hình khóa API', description: 'Nhà cung cấp của bạn đã được cập nhật.', variant: 'success' }); }} /></div>

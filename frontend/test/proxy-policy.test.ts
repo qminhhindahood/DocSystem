@@ -21,12 +21,12 @@ describe('BFF proxy policy', () => {
     expect(proxyRequestStatus('settings/llm', 'POST')).toBe(200);
     expect(proxyRequestStatus('settings/llm', 'DELETE')).toBe(200);
     expect(proxyRequestStatus('settings/llm/test', 'POST')).toBe(200);
-    expect(proxyRequestStatus('settings/llm/openrouter/models', 'GET')).toBe(200);
+    expect(proxyRequestStatus('settings/llm/openrouter/models', 'GET')).toBe(404);
   });
 
   it('rejects unsupported settings methods', () => {
     expect(proxyRequestStatus('settings/llm/test', 'GET')).toBe(405);
-    expect(proxyRequestStatus('settings/llm/openrouter/models', 'POST')).toBe(405);
+    expect(proxyRequestStatus('settings/llm/openrouter/models', 'POST')).toBe(404);
   });
 
   it('rejects every removed master-stack surface', () => {

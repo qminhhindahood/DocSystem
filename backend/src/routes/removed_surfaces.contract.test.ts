@@ -78,6 +78,11 @@ describe('removed master-stack surfaces (standalone prune, ticket 04)', () => {
     expect(fs.existsSync(path.join(srcRoot, 'routes', 'llm-settings.ts'))).toBe(true);
   });
 
+  it('OpenRouter catalog and provider services are deleted', () => {
+    expect(fs.existsSync(path.join(srcRoot, 'services', 'openrouter_models.ts'))).toBe(false);
+    expect(fs.existsSync(path.join(srcRoot, 'config', 'openrouter_models.ts'))).toBe(false);
+  });
+
   it.each([
     'orchestrator', 'rag_service', 'query_rewriter', 'context_filter', 'context_packer',
     'retrieval_pipeline', 'retrieval_observability', 'self_correct', 'structured_output_service',

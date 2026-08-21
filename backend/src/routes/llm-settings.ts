@@ -5,11 +5,8 @@
  * POST   /api/settings/llm                    — create/update config (AES-256-GCM key storage)
  * POST   /api/settings/llm/test               — test connection to the provider
  * DELETE /api/settings/llm                    — delete config
- * GET    /api/settings/llm/openrouter/models  — searchable OpenRouter catalog
  *
- * Providers: openrouter | gemini (cloud-only; the master stack's local
- * providers were deleted with the generation surface). Gemini is the wired
- * scanned-page vision path; OpenRouter is stored for the future Q&A feature.
+ * Gemini is the sole provider for the wired scanned-page vision path.
  */
 
 import express from 'express';
@@ -25,7 +22,6 @@ import {
 } from '../services/llm_config_service';
 import { LLM_PROVIDER_IDS, type LLMProvider } from '../constants/llm-providers';
 import { validateProviderTarget, parseAllowlist } from '../utils/urlGuard';
-import { listOpenRouterModels } from '../services/openrouter_models';
 
 const router = express.Router();
 
@@ -37,37 +33,6 @@ const LLMSettingsSchema = z.object({
     apiKey: z.string().max(8_192).optional(),
   }),
 });
-
-const ModelCatalogQuerySchema = z.object({
-  q: z.string().trim().max(120).optional(),
-});
-
-/**
- * GET /api/settings/llm/openrouter/models — searchable OpenRouter catalog
- * Catalog loading never uses the user's saved or submitted API key.
- */
-router.get(
-  '/openrouter/models',
-  userAuthMiddleware,
-  requireAuth,
-  async (req, res) => {
-    const parsed = ModelCatalogQuerySchema.safeParse(req.query);
-    if (!parsed.success) {
-      return res.status(400).json({ error: 'Invalid model search query' });
-    }
-
-    try {
-      const result = await listOpenRouterModels(parsed.data.q || '');
-      return res.json({ success: true, ...result });
-    } catch (error) {
-      console.error(
-        'Get OpenRouter models error:',
-        error instanceof Error ? error.message : error,
-      );
-      return res.status(502).json({ error: 'Unable to load OpenRouter models' });
-    }
-  },
-);
 
 /**
  * GET /api/settings/llm — get current user's LLM config
@@ -92,7 +57,7 @@ router.get(
         },
       });
 
-      const safeConfig = config ? {
+      const safeConfig = config?.provider === 'gemini' ? {
         id: config.id,
         provider: config.provider,
         baseUrl: config.baseUrl,
@@ -132,7 +97,7 @@ router.post(
         select: { provider: true, encryptedApiKey: true, apiKeyIv: true, apiKeyAuthTag: true },
       });
 
-      // Cloud-only product: no local-provider allowlist (BYOK, openrouter|gemini).
+      // Cloud-only product: no local-provider allowlist (BYOK Gemini).
       const allowlist = parseAllowlist(undefined);
       await validateProviderTarget(normalizedBaseUrl, providerType, allowlist).catch((err: Error) => {
         return res.status(400).json({ error: `Invalid provider URL: ${err.message}` });
@@ -223,7 +188,7 @@ router.post(
         return res.status(400).json({ success: false, error: 'API key is required for this provider' });
       }
 
-      // Cloud-only product: no local-provider allowlist (BYOK, openrouter|gemini).
+      // Cloud-only product: no local-provider allowlist (BYOK Gemini).
       const allowlist = parseAllowlist(undefined);
       await validateProviderTarget(normalizedBaseUrl, providerType, allowlist).catch((err: Error) => {
         return res.status(400).json({ success: false, error: `Invalid provider URL: ${err.message}` });

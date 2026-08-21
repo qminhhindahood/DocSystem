@@ -26,7 +26,7 @@ jest.mock('dns', () => ({
   },
 }));
 
-// The standalone product is cloud-only (openrouter, gemini). The master
+// The standalone product is cloud-only (Gemini). The master
 // stack's local-provider allowlist was deleted and stays deleted, so every
 // provider URL must resolve to an ordinary globally routable address.
 describe('LLM provider request safety (cloud-only BYOK)', () => {

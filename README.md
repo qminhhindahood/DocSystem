@@ -37,8 +37,7 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
   their own Google Gemini key in the settings dialog (gear icon in the sidebar);
   the backend keeps it AES-256-GCM encrypted and attaches it to the conversion
   job. A scanned upload with no key is rejected up front (422, Vietnamese
-  instructions) and costs no quota. OpenRouter keys can be stored too but are
-  reserved for the future Q&A feature — only Gemini is wired to vision today.
+  instructions) and costs no quota. Gemini is the only supported provider.
 - Docling / embeddings / document-renderer are **not** part of this project — the
   `/api/convert` path never touches them (backend `/health` may report degraded;
   that's expected here).

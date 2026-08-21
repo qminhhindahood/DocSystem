@@ -32,7 +32,7 @@ CREATE TABLE "PasswordResetToken" (
 CREATE TABLE "UserLLMConfig" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "provider" TEXT NOT NULL,
+    "provider" TEXT NOT NULL CHECK ("provider" = 'gemini'),
     "baseUrl" TEXT NOT NULL,
     "model" TEXT NOT NULL,
     "encryptedApiKey" TEXT NOT NULL,

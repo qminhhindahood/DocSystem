@@ -44,7 +44,7 @@ model PasswordResetToken {
 }
 
 // Per-user vision provider config (BYOK). The user brings their own API key;
-// the server never provides one. Providers: openrouter | gemini. The key is
+// the server never provides one. Gemini is the sole provider. The key is
 // stored AES-256-GCM encrypted (LLM_CONFIG_ENCRYPTION_KEY) and is only ever
 // decrypted server-side to attach to a conversion job the user submits.
 model UserLLMConfig {
@@ -52,7 +52,7 @@ model UserLLMConfig {
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  provider        String // openrouter | gemini
+  provider        String // gemini
   baseUrl         String
   model           String
   encryptedApiKey String @db.Text

@@ -1,11 +1,8 @@
 /**
  * Vision provider config service (BYOK).
  *
- * The standalone conversion product supports two stored providers:
- *   - gemini     — the wired scanned-page vision path; the decrypted key is
- *                  attached to the conversion job the user submits.
- *   - openrouter — stored for the future Q&A feature; not wired to the
- *                  conversion pipeline yet.
+ * The standalone conversion product supports one stored provider: Gemini.
+ * Its decrypted key is attached only to the conversion job the user submits.
  *
  * All provider calls go through the backend; API keys never leave the server
  * except as a per-job attachment to the private conversion-service network.
@@ -43,19 +40,15 @@ export function canonicalizeProviderBaseUrl(provider: LLMProvider, baseUrl: stri
   return CLOUD_PROVIDER_BASES[provider] || baseUrl.trim().replace(/\/+$/, '');
 }
 
-export function buildChatCompletionsEndpoint(baseUrl: string, provider: LLMProvider): string {
+export function buildChatCompletionsEndpoint(baseUrl: string, _provider: LLMProvider): string {
   const normalized = baseUrl.trim().replace(/\/+$/, '');
   if (/\/chat\/completions$/i.test(normalized)) return normalized;
-  if (provider === 'gemini') return `${normalized}/chat/completions`;
-  if (/\/(?:api\/)?v1$/i.test(normalized)) return `${normalized}/chat/completions`;
-  const versionPath = provider === 'openrouter' ? 'api/v1' : 'v1';
-  return `${normalized}/${versionPath}/chat/completions`;
+  return `${normalized}/chat/completions`;
 }
 
 export function providerHeaders(config: LLMProviderConfig): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
-  if (config.provider === 'openrouter') headers['X-OpenRouter-Title'] = 'DocAI';
   return headers;
 }
 
@@ -132,8 +125,8 @@ export async function testLLMConnection(config: LLMProviderConfig): Promise<{
  * Resolve the caller's vision config for a conversion submission (BYOK).
  *
  * Returns the decrypted Gemini config when the user has one; returns null in
- * every other case — no row, an OpenRouter-only config (not wired to vision
- * yet), or a stored key that fails to decrypt. Null means "no usable vision
+ * every other case — no row, a non-Gemini legacy row, or a stored key that
+ * fails to decrypt. Null means "no usable vision
  * key", which the conversion service answers with its upfront 422 for
  * scanned uploads. Never throws into the submit path.
  */

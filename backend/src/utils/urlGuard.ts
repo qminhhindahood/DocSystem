@@ -1,7 +1,7 @@
 /**
  * SSRF guard for user-supplied provider URLs (BYOK vision settings).
  *
- * The standalone product supports cloud providers only (openrouter, gemini),
+ * The standalone product supports one cloud provider only (Gemini),
  * so every provider URL must resolve to an ordinary globally routable
  * address. The master stack's local-provider allowlist (lmstudio/ollama) was
  * deleted with the generation surface and stays deleted.

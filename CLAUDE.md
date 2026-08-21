@@ -277,8 +277,7 @@ Five jobs in `.github/workflows/ci.yml`:
   logged, echoed in job status/report, or returned by the settings GET.
 - **Scanned PDF + no Gemini key → 422 before quota** (Vietnamese instructions,
   deep-link button "Cấu hình khóa API" opens the settings dialog via the
-  `open-llm-settings` window event). OpenRouter-only users get the same 422 —
-  only Gemini is wired to vision; OpenRouter is stored for future Q&A.
+  `open-llm-settings` window event). Gemini is the only supported provider.
 - **Backend has no `typecheck` script** — use `npm run build` (tsc).
 
 ---

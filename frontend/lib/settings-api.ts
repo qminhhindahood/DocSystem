@@ -17,17 +17,6 @@ export interface LLMConfigInput {
   apiKey?: string;
 }
 
-export interface OpenRouterModel {
-  id: string;
-  name: string;
-  provider: string;
-  contextLength: number | null;
-  promptPricePerMillion: number | null;
-  completionPricePerMillion: number | null;
-  free: boolean;
-  recommended: boolean;
-}
-
 async function apiFetch<T>(url: string, options?: RequestInit, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { ...options, signal });
   if (res.status === 401) throw new AuthError();
@@ -77,15 +66,4 @@ export async function deleteLLMSettings(signal?: AbortSignal): Promise<{ success
   return apiFetch('/api/proxy/settings/llm', {
     method: 'DELETE',
   }, signal);
-}
-
-export async function getOpenRouterModels(query = '', signal?: AbortSignal): Promise<{
-  success: boolean;
-  models: OpenRouterModel[];
-  total: number;
-}> {
-  const params = new URLSearchParams();
-  if (query.trim()) params.set('q', query.trim());
-  const suffix = params.size ? `?${params.toString()}` : '';
-  return apiFetch(`/api/proxy/settings/llm/openrouter/models${suffix}`, undefined, signal);
 }

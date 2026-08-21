@@ -42,6 +42,12 @@ describe('removed master-stack frontend surfaces (standalone prune, ticket 06)',
     expect(exists(component)).toBe(false);
   });
 
+  it('OpenRouter picker and catalog client stay deleted', () => {
+    expect(exists('components/settings/OpenRouterModelPicker.tsx')).toBe(false);
+    expect(read('lib/settings-api.ts')).not.toContain('getOpenRouterModels');
+    expect(read('lib/llm-providers.ts')).not.toContain('openrouter');
+  });
+
   it.each([
     'lib/api.ts',
     'lib/analytics.ts',
