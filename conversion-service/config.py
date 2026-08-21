@@ -76,6 +76,9 @@ FILE_CLEANUP_INTERVAL_S = max(
     1, int(os.environ.get("CONVERSION_FILE_CLEANUP_INTERVAL_S", "60"))
 )
 QUEUE_POLL_TIMEOUT_S = 1  # BLPOP block time
+QUOTA_REFUND_RETRY_DELAY_S = max(
+    0.1, float(os.environ.get("CONVERSION_QUOTA_REFUND_RETRY_DELAY_S", "1"))
+)
 
 # ─── Eval targets (plan §12) ──────────────────────────────────────────────────
 EVAL_CER_DIGITAL_MAX = 0.02

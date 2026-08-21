@@ -40,11 +40,11 @@ logger = logging.getLogger(__name__)
 QUOTA = QuotaService()
 
 
-def _refund_once(store: JobStore, job: dict) -> None:
+def _refund_once(store: JobStore, job: dict) -> bool:
     """Refund the submitting user's quota once per failed job."""
     user_id = job.get("userId")
     if not user_id:
-        return
+        return True
     flag_key = f"{config.JOB_STATE_PREFIX}{job['jobId']}:refunded"
     quota_key = job.get("quotaKey") or QUOTA._key(user_id)
     try:
@@ -55,13 +55,30 @@ def _refund_once(store: JobStore, job: dict) -> None:
         )
     except Exception as error:  # noqa: BLE001
         logger.warning("quota refund failed for job %s: %s", job["jobId"], error)
-        return
-    store.update(job["jobId"], quotaRefunded=True)
+        return False
+    store.update(
+        job["jobId"],
+        quotaRefunded=True,
+        quotaRefundPending=False,
+    )
+    return True
 
 
 def process_job(store: JobStore, job: dict) -> None:
     job_id = job["jobId"]
     pdf_path = job["pdfPath"]
+    prior_state = store.load(job_id) or {}
+    if prior_state.get("quotaRefundPending"):
+        if _refund_once(store, job):
+            store.finish_processing(job)
+        else:
+            time.sleep(config.QUOTA_REFUND_RETRY_DELAY_S)
+            if not store.requeue_processing(job):
+                logger.error("job %s refund remains pending in processing", job_id)
+        delete_source(pdf_path)
+        return
+
+    refund_pending = False
     store.update(job_id, status="processing", progress=0.1)
 
     out_path = str(config.OUTPUT_DIR / f"{job_id}.docx")
@@ -83,7 +100,7 @@ def process_job(store: JobStore, job: dict) -> None:
         if report.status == "failed":
             store.update(job_id, status="failed", progress=1.0, report=asdict(report))
             delete_job_artifacts(job_id)
-            _refund_once(store, job)
+            refund_pending = not _refund_once(store, job)
         else:
             mark_job_artifacts_complete(job_id)
             store.update(
@@ -102,7 +119,7 @@ def process_job(store: JobStore, job: dict) -> None:
         METRICS.record_outcome("failed")
         store.update(job_id, status="failed", progress=1.0, error=e.detail)
         delete_job_artifacts(job_id)
-        _refund_once(store, job)
+        refund_pending = not _refund_once(store, job)
     except VisionAuthError:
         # BYOK fail-fast: the user's Gemini key was rejected. Clear message,
         # quota refunded once — never a page-by-page vague degradation.
@@ -112,7 +129,7 @@ def process_job(store: JobStore, job: dict) -> None:
         store.update(job_id, status="failed", progress=1.0,
                      error=VISION_AUTH_FAILED_DETAIL)
         delete_job_artifacts(job_id)
-        _refund_once(store, job)
+        refund_pending = not _refund_once(store, job)
     except Exception:  # noqa: BLE001
         logger.exception("job %s crashed", job_id)
         METRICS.inc("conversion_jobs_total", status="failed")
@@ -123,12 +140,18 @@ def process_job(store: JobStore, job: dict) -> None:
             error=UNEXPECTED_CONVERSION_ERROR,
         )
         delete_job_artifacts(job_id)
-        _refund_once(store, job)
+        refund_pending = not _refund_once(store, job)
     finally:
         # Terminal state: clear the processing-list entry so the job is not
         # reclaimed, then remove the uploaded source. The DOCX result stays
         # until its JobStore record TTL expires.
-        store.finish_processing(job)
+        if refund_pending:
+            store.update(job_id, quotaRefundPending=True)
+            time.sleep(config.QUOTA_REFUND_RETRY_DELAY_S)
+            if not store.requeue_processing(job):
+                logger.error("job %s refund remains pending in processing", job_id)
+        else:
+            store.finish_processing(job)
         delete_source(pdf_path)
 
 

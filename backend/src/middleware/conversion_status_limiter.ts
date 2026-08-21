@@ -2,10 +2,14 @@ import rateLimit from 'express-rate-limit';
 import type { Request } from 'express';
 
 const windowMs = Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000;
-export const SUPPORTED_BULK_POLL_REQUESTS_PER_WINDOW = 10 * (windowMs / 1_500);
+export function supportedBulkPollRequests(rateWindowMs: number): number {
+  return Math.ceil(10 * (rateWindowMs / 1_500));
+}
+
+export const SUPPORTED_BULK_POLL_REQUESTS_PER_WINDOW = supportedBulkPollRequests(windowMs);
 export const CONVERSION_STATUS_RATE_LIMIT_MAX = Number(
   process.env.CONVERSION_STATUS_RATE_LIMIT_MAX,
-) || 7_200;
+) || Math.ceil(SUPPORTED_BULK_POLL_REQUESTS_PER_WINDOW * 1.2);
 
 /** Exact polling endpoint only; reports and downloads retain the general cap. */
 export function isConversionStatusRequest(req: Request): boolean {

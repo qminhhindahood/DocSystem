@@ -4,8 +4,8 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Interleaved scanned and digital pages are emitted in ascending source-page order.
-- [ ] Multiple blocks from one page retain their extraction order when pages are merged.
-- [ ] Regression coverage includes scanned page 1 with digital page 2 and a longer alternating mixed document.
+- [x] Interleaved scanned and digital pages are emitted in ascending source-page order.
+- [x] Multiple blocks from one page retain their extraction order when pages are merged.
+- [x] Regression coverage includes scanned page 1 with digital page 2 and a longer alternating mixed document.

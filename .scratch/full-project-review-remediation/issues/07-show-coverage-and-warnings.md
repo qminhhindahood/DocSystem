@@ -4,8 +4,8 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The public report contract includes document coverage and all generated warnings with stable types.
-- [ ] The completed-job interface explains coverage and warnings in Vietnamese alongside confidence and degraded-page information.
-- [ ] Completed-with-warnings results remain downloadable, with API and UI regression coverage for low confidence and table fallback warnings.
+- [x] The public report contract includes document coverage and all generated warnings with stable types.
+- [x] The completed-job interface explains coverage and warnings in Vietnamese alongside confidence and degraded-page information.
+- [x] Completed-with-warnings results remain downloadable, with API and UI regression coverage for low confidence and table fallback warnings.

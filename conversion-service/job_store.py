@@ -181,6 +181,21 @@ class JobStore:
         except Exception as e:  # noqa: BLE001
             logger.warning("JobStore: finish_processing failed (%s)", e)
 
+    def requeue_processing(self, job: dict[str, Any]) -> bool:
+        """Atomically move one processing payload back to the work queue."""
+        if self._redis is None:
+            return False
+        payload = json.dumps(job, ensure_ascii=False)
+        try:
+            with self._redis.pipeline(transaction=True) as pipe:
+                pipe.lrem(config.CONVERSION_PROCESSING_KEY, 1, payload)
+                pipe.lpush(config.CONVERSION_QUEUE_KEY, payload)
+                removed, _queued = pipe.execute()
+            return int(removed) > 0
+        except Exception as error:  # noqa: BLE001
+            logger.warning("JobStore: refund retry requeue failed (%s)", error)
+            return False
+
     def reclaim_processing(self) -> int:
         """Re-queue every payload left in the processing list (worker startup).
 

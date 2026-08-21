@@ -71,7 +71,7 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
   BRPOPLPUSH (crash-safe: processing list + startup reclaim). Terminal-state
   LREM removes completed jobs.
 - **Daily quota**: 20 docs/user/day, charged only after PDF validation passes.
-  Failed conversions refund quota (Redis SET NX EX dedup flag).
+  Failed conversions use an atomic exact-key refund marker and durable retry.
 - **Owner scope**: GET /:jobId, /:jobId/report, /:jobId/result all assert job
   ownership. Unknown and not-yours both return 404.
 - Docling / embeddings / document-renderer are **not** part of this project.
@@ -128,7 +128,7 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
 │   │   ├── routes/
 │   │   │   ├── auth.ts               # Login, register, password reset
 │   │   │   ├── convert.ts            # Submit, status, report, result
-│   │   │   ├── llm-settings.ts       # BYOK vision provider settings (GET/POST/DELETE/test/models)
+│   │   │   ├── llm-settings.ts       # BYOK Gemini settings (GET/POST/DELETE/test)
 │   │   │   └── removed_surfaces.contract.test.ts  # Absence assertions
 │   │   ├── services/
 │   │   │   ├── readiness_service.ts  # Postgres + Redis + conversion only
@@ -136,7 +136,7 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
 │   │   ├── middleware/
 │   │   │   ├── user_auth.ts          # JWT auth + owner scope
 │   │   │   ├── validation.ts         # Zod input validation
-│   │   │   └── ratelimit.ts
+│   │   │   └── conversion_status_limiter.ts
 │   │   └── utils/
 │   │       ├── prisma.ts
 │   │       ├── redis.ts
@@ -171,7 +171,7 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
 │   ├── structuring/                  # JSON structure extraction
 │   ├── vision/                       # Gemini Flash scanned-page OCR (BYOK key injected per job)
 │   ├── eval/                         # E2E + P0a verification
-│   └── tests/                        # 111 pytest tests
+│   └── tests/                        # 128 pytest tests
 ├── shared/decree30-typography.json   # Single source of Decree-30 typography
 ├── docker-compose.yml                # Standalone stack (8 services)
 ├── init.sql                          # Postgres bootstrap (no extensions)
@@ -229,13 +229,13 @@ REDIS_VOLUME=standalone_redis_data
 ## Testing
 
 ```powershell
-# Backend tests (Jest) — 28 suites / 254 tests
+# Backend tests (Jest) — 28 suites / 246 tests
 cd backend && npm test
 
-# Frontend tests (Vitest) — 23 files / 199 tests
+# Frontend tests (Vitest) — 25 files / 202 tests
 cd frontend && npm test -- --run
 
-# Conversion service tests (pytest) — 111 tests
+# Conversion service tests (pytest) — 128 tests
 cd conversion-service
 .venv\Scripts\python.exe -m pytest
 
@@ -269,7 +269,8 @@ Five jobs in `.github/workflows/ci.yml`:
 - **Frontend tests use Vitest**, not Jest. Use `npm test` in the frontend directory.
 - **Backend `predev` script** runs `prisma migrate deploy` automatically.
 - **node:22-alpine ships no curl** — healthchecks use Node's global fetch.
-- **Quota refund** uses a Redis SET NX EX dedup flag to prevent double-refund.
+- **Quota refund** atomically decrements the original charge and records its
+  idempotency marker; pending worker refunds are requeued as refund-only work.
 - **BRPOPLPUSH** moves jobs to a processing list; startup reclaim re-enqueues
   any jobs left there after a crash.
 - **BYOK vision keys transit the Redis job payload** (`vision` JSON field) on

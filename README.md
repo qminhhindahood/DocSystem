@@ -140,13 +140,13 @@ the new backend port.
 cd conversion-service
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
-.venv\Scripts\python.exe -m pytest          # 111 tests
+.venv\Scripts\python.exe -m pytest          # 128 tests
 
 cd ..\backend
-npm install && npm test                     # 254 tests
+npm install && npm test                     # 246 tests
 
 cd ..\frontend
-npm install && npm test                     # 199 tests
+npm install && npm test                     # 202 tests
 ```
 
 Fixture seals are generated artifacts (gitignored). Regenerate before running

@@ -6,6 +6,7 @@ import { app } from './index';
 import {
   CONVERSION_STATUS_RATE_LIMIT_MAX,
   SUPPORTED_BULK_POLL_REQUESTS_PER_WINDOW,
+  supportedBulkPollRequests,
 } from './middleware/conversion_status_limiter';
 import { withHttpServer } from './test/http';
 
@@ -15,6 +16,7 @@ describe('conversion status rate limiting', () => {
     expect(CONVERSION_STATUS_RATE_LIMIT_MAX).toBeGreaterThan(
       SUPPORTED_BULK_POLL_REQUESTS_PER_WINDOW,
     );
+    expect(supportedBulkPollRequests(30 * 60 * 1_000)).toBe(12_000);
   });
   it('keeps general protection while allowing the supported polling workflow', async () => {
     await withHttpServer(app, async (baseUrl) => {

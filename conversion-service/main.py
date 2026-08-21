@@ -85,6 +85,8 @@ QUOTA = QuotaService(redis_client=STORE.redis_client)
 # In-process fallback registry (dev mode only)
 _LOCAL_JOBS: dict[str, dict[str, Any]] = {}
 _LOCAL_JOB_CAP = 200
+_PENDING_REFUNDS: dict[str, AdmittedJob] = {}
+_REFUND_RETRY_TASKS: dict[str, asyncio.Task[None]] = {}
 
 
 def _evict_local_jobs() -> None:
@@ -155,11 +157,10 @@ def _record_job_metrics(report) -> None:
     METRICS.record_outcome(report.status)
 
 
-def _refund_local_once(job: AdmittedJob) -> None:
-    """Refund one failed local job using the charge captured at admission."""
-    state = _LOCAL_JOBS.get(job.job_id) or {}
-    if not job.user_id or not job.quota_key or state.get("quotaRefunded"):
-        return
+def _attempt_job_refund(job: AdmittedJob) -> bool:
+    """Attempt the exact once-only refund; False means it must be retried."""
+    if not job.user_id or not job.quota_key:
+        return True
     refund_key = f"{config.JOB_STATE_PREFIX}{job.job_id}:refunded"
     try:
         QUOTA.refund_charge_once(
@@ -169,8 +170,51 @@ def _refund_local_once(job: AdmittedJob) -> None:
         )
     except Exception as error:  # noqa: BLE001
         logger.warning("quota refund failed for local job %s: %s", job.job_id, error)
+        return False
+    return True
+
+
+async def _retry_job_refund(job: AdmittedJob) -> None:
+    """Keep a failed local/dispatch refund live until the exact charge clears."""
+    try:
+        while job.job_id in _PENDING_REFUNDS:
+            await asyncio.sleep(config.QUOTA_REFUND_RETRY_DELAY_S)
+            if not _attempt_job_refund(job):
+                continue
+            _PENDING_REFUNDS.pop(job.job_id, None)
+            if job.job_id in _LOCAL_JOBS:
+                _local_job(
+                    job.job_id,
+                    quotaRefunded=True,
+                    quotaRefundPending=False,
+                )
+    finally:
+        _REFUND_RETRY_TASKS.pop(job.job_id, None)
+
+
+def _schedule_job_refund_retry(job: AdmittedJob) -> None:
+    _PENDING_REFUNDS[job.job_id] = job
+    task = _REFUND_RETRY_TASKS.get(job.job_id)
+    if task is not None and not task.done():
         return
-    _local_job(job.job_id, quotaRefunded=True)
+    task = asyncio.create_task(_retry_job_refund(job))
+    _REFUND_RETRY_TASKS[job.job_id] = task
+
+
+def _refund_local_once(job: AdmittedJob) -> None:
+    """Refund one failed local job, scheduling retry on transient failure."""
+    state = _LOCAL_JOBS.get(job.job_id) or {}
+    if state.get("quotaRefunded"):
+        return
+    if _attempt_job_refund(job):
+        _local_job(
+            job.job_id,
+            quotaRefunded=True,
+            quotaRefundPending=False,
+        )
+        return
+    _local_job(job.job_id, quotaRefundPending=True)
+    _schedule_job_refund_retry(job)
 
 
 async def _run_job_in_process(job: AdmittedJob) -> None:
@@ -269,19 +313,8 @@ def _dispatch_job(job: AdmittedJob) -> str:
                 cleanup_error,
             )
         _LOCAL_JOBS.pop(job.job_id, None)
-        if job.quota_key:
-            try:
-                QUOTA.refund_charge_once(
-                    f"{config.JOB_STATE_PREFIX}{job.job_id}:refunded",
-                    job.quota_key,
-                    ttl_s=config.JOB_STATE_TTL_S,
-                )
-            except Exception as refund_error:  # noqa: BLE001
-                logger.error(
-                    "quota rollback failed for undispatched job %s: %s",
-                    job.job_id,
-                    refund_error,
-                )
+        if not _attempt_job_refund(job):
+            _schedule_job_refund_retry(job)
         delete_source(job.pdf_path)
         raise AdmissionError(500, UNEXPECTED_CONVERSION_ERROR) from error
 
@@ -354,10 +387,13 @@ async def convert(
 
 def _find_job(job_id: str) -> Optional[dict[str, Any]]:
     """Job state from the store (queue mode) or local registry (dev mode)."""
+    local_state = _LOCAL_JOBS.get(job_id)
+    if local_state is not None:
+        return local_state
     state = STORE.load(job_id)
     if state is not None:
         return state
-    return _LOCAL_JOBS.get(job_id)
+    return None
 
 
 @app.get("/convert/{job_id}")

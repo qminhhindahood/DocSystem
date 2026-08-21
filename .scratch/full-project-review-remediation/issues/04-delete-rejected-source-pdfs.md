@@ -4,8 +4,8 @@
 
 **Blocked by:** 01 — Unify conversion admission and execution context.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Password-protected PDFs and scanned-page eligibility rejections remove their saved source before the response completes.
-- [ ] Unexpected PDF inspection failures also remove the saved source while returning the established safe error contract.
-- [ ] Bulk intake cleans each rejected item independently without deleting accepted jobs, and all rejected items remain free.
+- [x] Password-protected PDFs and scanned-page eligibility rejections remove their saved source before the response completes.
+- [x] Unexpected PDF inspection failures also remove the saved source while returning the established safe error contract.
+- [x] Bulk intake cleans each rejected item independently without deleting accepted jobs, and all rejected items remain free.

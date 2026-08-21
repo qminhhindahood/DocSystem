@@ -92,10 +92,12 @@ export default function ConvertPage() {
       const next = previous.map((job) => ({ ...job, ...patches.get(job.jobId) }));
       jobsRef.current = next;
       setJobs(next);
-      const changed = next.filter((job, index) => (
-        statusOf(job) !== statusOf(previous[index])
-        || job.error !== previous[index].error
-      ));
+      const changed = next.filter((job, index) => {
+        const prior = previous[index];
+        return prior === undefined
+          || statusOf(job) !== statusOf(prior)
+          || job.error !== prior.error;
+      });
       if (changed.length > 0) {
         setAnnouncement(changed.map((job) => (
           `${job.filename}: ${STATUS_LABELS[statusOf(job)] ?? statusOf(job)}`
