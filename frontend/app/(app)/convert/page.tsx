@@ -45,73 +45,95 @@ function isTerminal(status: string): boolean {
 export default function ConvertPage() {
   const [jobs, setJobs] = useState<ConversionJob[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const timersRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
+  const jobsRef = useRef<ConversionJob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollInFlightRef = useRef(false);
 
-  const stopPolling = useCallback((jobId: string) => {
-    const timer = timersRef.current.get(jobId);
-    if (timer) {
-      clearInterval(timer);
-      timersRef.current.delete(jobId);
+  const stopPolling = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
   }, []);
 
   const updateJob = useCallback((jobId: string, patch: Partial<ConversionJob>) => {
-    setJobs((prev) => prev.map((j) => (j.jobId === jobId ? { ...j, ...patch } : j)));
+    setJobs((prev) => {
+      const next = prev.map((job) => (
+        job.jobId === jobId ? { ...job, ...patch } : job
+      ));
+      jobsRef.current = next;
+      return next;
+    });
   }, []);
 
-  const startPolling = useCallback((jobId: string) => {
-    if (timersRef.current.has(jobId)) return;
-    const timer = setInterval(async () => {
-      try {
-        const status = await getConversionStatus(jobId);
-        updateJob(jobId, { status, error: status.error ?? null });
-        if (status.status && isTerminal(status.status)) {
-          stopPolling(jobId);
+  const pollActiveJobs = useCallback(async () => {
+    if (pollInFlightRef.current) return;
+    pollInFlightRef.current = true;
+    try {
+      const activeJobs = jobsRef.current.filter((job) => !isTerminal(statusOf(job)));
+      for (const job of activeJobs) {
+        try {
+          const status = await getConversionStatus(job.jobId);
+          updateJob(job.jobId, { status, error: status.error ?? null });
+        } catch (err) {
+          // A transient read error does not discard the job or stop later polls.
+          updateJob(job.jobId, {
+            error: err instanceof Error ? err.message : "Không thể cập nhật trạng thái",
+          });
         }
-      } catch (err) {
-        // transient poll failure — keep polling until terminal
-        updateJob(jobId, {
-          error: err instanceof Error ? err.message : "Không thể cập nhật trạng thái",
-        });
       }
-    }, POLL_INTERVAL_MS);
-    timersRef.current.set(jobId, timer);
+      if (!jobsRef.current.some((job) => !isTerminal(statusOf(job)))) {
+        stopPolling();
+      }
+    } finally {
+      pollInFlightRef.current = false;
+    }
   }, [stopPolling, updateJob]);
+
+  const startPolling = useCallback(() => {
+    if (timerRef.current) return;
+    timerRef.current = setInterval(() => {
+      void pollActiveJobs();
+    }, POLL_INTERVAL_MS);
+  }, [pollActiveJobs]);
 
   // Track created object URLs so the unmount cleanup can revoke them
   // (the browser keeps the Blob alive until revoked even after navigation).
   const urlsRef = useRef<Map<string, string>>(new Map());
 
-  // Clean up timers + object URLs on unmount.
+  // Clean up the shared timer + object URLs on unmount.
   useEffect(() => {
-    const timers = timersRef.current;
     const urls = urlsRef.current;
     return () => {
-      for (const timer of timers.values()) clearInterval(timer);
-      timers.clear();
+      stopPolling();
+      pollInFlightRef.current = false;
       for (const url of urls.values()) URL.revokeObjectURL(url);
       urls.clear();
     };
-  }, []);
+  }, [stopPolling]);
 
-  const handleSubmitted = useCallback((jobs: SubmittedJob[]) => {
-    setJobs((prev) => [
-      ...jobs.map((j) => {
-        const url = URL.createObjectURL(j.file);
-        urlsRef.current.set(j.jobId, url);
-        return ({
-          jobId: j.jobId,
-          filename: j.filename,
-          sourceUrl: url,
-          status: null,
-          error: null,
-          report: null,
-          reportOpen: false,
-        });
-      }),
-      ...prev,
-    ]);
-    for (const j of jobs) startPolling(j.jobId);
+  const handleSubmitted = useCallback((submittedJobs: SubmittedJob[]) => {
+    setJobs((prev) => {
+      const next = [
+        ...submittedJobs.map((job) => {
+          const url = URL.createObjectURL(job.file);
+          urlsRef.current.set(job.jobId, url);
+          return ({
+            jobId: job.jobId,
+            filename: job.filename,
+            sourceUrl: url,
+            status: null,
+            error: null,
+            report: null,
+            reportOpen: false,
+          });
+        }),
+        ...prev,
+      ];
+      jobsRef.current = next;
+      return next;
+    });
+    startPolling();
   }, [startPolling]);
 
   const loadReport = useCallback(async (jobId: string) => {
