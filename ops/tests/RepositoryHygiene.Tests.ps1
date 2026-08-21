@@ -46,7 +46,7 @@ Describe 'Repository development hygiene (standalone)' {
   }
 
   It 'keeps the deleted master-stack surfaces absent' {
-    foreach ($dead in @('docling-service', 'embeddings-service', 'document-renderer', 'cloudflare-worker', 'infra', 'deploy', 'templates', 'add_header.py')) {
+    foreach ($dead in @('docling-service', 'embeddings-service', 'document-renderer', 'cloudflare-worker', 'infra', 'deploy', 'templates', 'ori', 'add_header.py')) {
       Test-Path -LiteralPath (Join-Path $root $dead) | Should -BeFalse
     }
     Test-Path -LiteralPath (Join-Path $root '.github/workflows/deploy-production.yml') | Should -BeFalse
