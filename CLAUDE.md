@@ -171,7 +171,7 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
 │   ├── structuring/                  # JSON structure extraction
 │   ├── vision/                       # Gemini Flash scanned-page OCR (BYOK key injected per job)
 │   ├── eval/                         # E2E + P0a verification
-│   └── tests/                        # 94 pytest tests
+│   └── tests/                        # 111 pytest tests
 ├── shared/decree30-typography.json   # Single source of Decree-30 typography
 ├── docker-compose.yml                # Standalone stack (8 services)
 ├── init.sql                          # Postgres bootstrap (no extensions)
@@ -235,7 +235,7 @@ cd backend && npm test
 # Frontend tests (Vitest) — 23 files / 199 tests
 cd frontend && npm test -- --run
 
-# Conversion service tests (pytest) — 94 tests
+# Conversion service tests (pytest) — 111 tests
 cd conversion-service
 .venv\Scripts\python.exe -m pytest
 

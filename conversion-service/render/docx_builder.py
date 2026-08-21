@@ -373,21 +373,28 @@ class DocxBlockBuilder:
         all_rows = block.headers + block.rows
         if not all_rows:
             return
-        n_cols = max(len(r) for r in all_rows)
+        n_cols = max(sum(cell.colspan for cell in row) for row in all_rows)
         table = self.doc.add_table(rows=len(all_rows), cols=n_cols)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         table.style = "Table Grid"
 
+        occupied: set[tuple[int, int]] = set()
         for r_idx, row in enumerate(all_rows):
             is_header = r_idx < len(block.headers)
             col_cursor = 0
             for cell in row:
+                while col_cursor < n_cols and (r_idx, col_cursor) in occupied:
+                    col_cursor += 1
                 if col_cursor >= n_cols:
                     break
                 dc = table.cell(r_idx, col_cursor)
                 # apply colspan/rowspan via merge
                 end_col = min(col_cursor + cell.colspan, n_cols) - 1
                 end_row = min(r_idx + cell.rowspan, len(all_rows)) - 1
+                for occupied_row in range(r_idx, end_row + 1):
+                    for occupied_col in range(col_cursor, end_col + 1):
+                        if (occupied_row, occupied_col) != (r_idx, col_cursor):
+                            occupied.add((occupied_row, occupied_col))
                 if end_col > col_cursor or end_row > r_idx:
                     dc = dc.merge(table.cell(end_row, end_col))
                 p = dc.paragraphs[0]

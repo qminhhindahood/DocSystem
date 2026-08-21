@@ -141,7 +141,7 @@ the new backend port.
 cd conversion-service
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
-.venv\Scripts\python.exe -m pytest          # 94 tests
+.venv\Scripts\python.exe -m pytest          # 111 tests
 
 cd ..\backend
 npm install && npm test                     # 254 tests

@@ -72,6 +72,9 @@ CONVERSION_PROCESSING_KEY = "conversion_processing"
 JOB_STATE_PREFIX = "conversion:job:"
 JOB_STATE_TTL_S = int(os.environ.get("CONVERSION_JOB_TTL_S", str(24 * 3600)))  # file TTL
 FILE_TTL_S = int(os.environ.get("CONVERSION_FILE_TTL_S", str(24 * 3600)))      # auto-delete
+FILE_CLEANUP_INTERVAL_S = max(
+    1, int(os.environ.get("CONVERSION_FILE_CLEANUP_INTERVAL_S", "60"))
+)
 QUEUE_POLL_TIMEOUT_S = 1  # BLPOP block time
 
 # ─── Eval targets (plan §12) ──────────────────────────────────────────────────

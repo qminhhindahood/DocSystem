@@ -3,7 +3,7 @@
 Wires: Ingest -> Triage -> Extract/Structure -> Assembly -> Rule engine ->
 Render -> Deliver. Text pages run free (classifier cascade); scanned pages
 route to the Gemini vision contract; TABLE_HEAVY uses find_tables primary +
-quality gate with Gemini region-vision fallback.
+quality gate with deterministic text fallback.
 """
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from schema.blocks import Block, blocks_to_dicts, parse_blocks
 from schema.validator import validate_chunk
 from structuring.admin_zones import build_admin_header, build_signature
 from structuring.classifier import Classifier, LineInfo
+from structuring.tables import DetectedTable, extract_accepted_tables
 from structuring.zones import extract_lines, partition_zones
 from triage.triage import DIGITAL_TEXT, SCANNED, TABLE_HEAVY, triage_page
 
@@ -118,30 +119,89 @@ def _run_scanned_vision(vision: dict, pdf_path: str,
     blocks: list[Block] = []
     degraded: list[int] = []
     warnings: list[str] = []
-    scanned_set = set(scanned_pages)
-    for (first, last), raw in zip(batches, results):
-        batch_pages = [p for p in range(first, last + 1) if p in scanned_set]
+    for batch, raw in zip(batches, results):
+        batch_pages = list(batch)
+        allowed_pages = set(batch_pages)
+        batch_label = ", ".join(str(page) for page in batch_pages)
         if raw is None:
             degraded.extend(batch_pages)
             warnings.append(
-                f"pages {first}-{last}: Gemini vision returned no usable result"
+                f"pages {batch_label}: Gemini vision returned no usable result"
             )
             continue
         result = validate_chunk(raw)
         if not result.ok:
             degraded.extend(batch_pages)
             warnings.append(
-                f"pages {first}-{last}: Gemini vision output failed validation "
+                f"pages {batch_label}: Gemini vision output failed validation "
                 f"({result.error_text()})"
             )
             continue
+        returned_pages: set[int] = set()
         for b in result.blocks:
             if getattr(b, "page", None) is None:
-                b.page = first
+                if len(batch_pages) == 1:
+                    b.page = batch_pages[0]
+                else:
+                    warnings.append(
+                        f"pages {batch_label}: discarded a Gemini block without a page"
+                    )
+                    continue
+            if b.page not in allowed_pages:
+                warnings.append(
+                    f"pages {batch_label}: discarded Gemini block for page {b.page}"
+                )
+                continue
             # Scanned extraction is capped even on a confident transcription.
             b.confidence = min(b.confidence, config.SCANNED_CONFIDENCE_CAP)
+            returned_pages.add(b.page)
             blocks.append(b)
+        missing_pages = sorted(allowed_pages - returned_pages)
+        if missing_pages:
+            degraded.extend(missing_pages)
+            warnings.append(
+                f"pages {', '.join(str(page) for page in missing_pages)}: "
+                "Gemini returned no blocks for the selected page"
+            )
     return blocks, degraded, warnings
+
+
+def _stamp_page(blocks: list[Block], page_number: int) -> list[Block]:
+    for block in blocks:
+        if getattr(block, "page", None) is None:
+            block.page = page_number
+    return blocks
+
+
+def _line_in_table(line: LineInfo, table: DetectedTable) -> bool:
+    x = (line.x0 + line.x1) / 2
+    y = (line.y + line.y1) / 2
+    x0, y0, x1, y1 = table.bbox
+    return x0 <= x <= x1 and y0 <= y <= y1
+
+
+def _structure_body_with_tables(
+    classifier: Classifier,
+    body_lines: list[LineInfo],
+    tables: list[DetectedTable],
+    page_number: int,
+) -> list[Block]:
+    """Interleave non-table text segments and accepted tables by vertical position."""
+    remaining = [
+        line for line in body_lines
+        if not any(_line_in_table(line, table) for table in tables)
+    ]
+    blocks: list[Block] = []
+    cursor = 0
+    for table in tables:
+        before: list[LineInfo] = []
+        while cursor < len(remaining) and (remaining[cursor].y + remaining[cursor].y1) / 2 < table.bbox[1]:
+            before.append(remaining[cursor])
+            cursor += 1
+        blocks.extend(_stamp_page(classifier.structure(before), page_number))
+        blocks.append(table.block)
+    blocks.extend(_stamp_page(classifier.structure(remaining[cursor:]), page_number))
+    return blocks
 
 
 def convert_pdf(pdf_path: str, out_path: str,
@@ -201,7 +261,7 @@ def convert_pdf(pdf_path: str, out_path: str,
                         b.page = page_no
                 all_blocks.extend(blocks)
             elif ptype == TABLE_HEAVY:
-                # Primary: find_tables (free). Quality gate -> Gemini fallback (P1).
+                # Primary: find_tables (free). Quality gate -> text fallback.
                 lines = _extract_text_page_lines(page, page_no)
                 report.extracted_chars += sum(len(l.text) for l in lines)
                 zones = partition_zones(lines, page_no, page.rect.width, page.rect.height)
@@ -212,11 +272,17 @@ def convert_pdf(pdf_path: str, out_path: str,
                 sig = build_signature(zones.signature, page_no, page.rect.width)
                 if sig is not None:
                     sig_candidates[page_no] = sig
-                blocks = classifier.structure(zones.body)
-                for b in blocks:
-                    if getattr(b, "page", None) is None:
-                        b.page = page_no
+                tables, rejected_tables = extract_accepted_tables(page, page_no)
+                blocks = _structure_body_with_tables(
+                    classifier, zones.body, tables, page_no
+                )
                 all_blocks.extend(blocks)
+                if rejected_tables:
+                    report.status = "completed_with_warnings"
+                    report.warnings.append(
+                        f"page {page_no}: {rejected_tables} detected table(s) failed "
+                        "the quality gate and used text fallback"
+                    )
             else:  # SCANNED
                 # Gemini vision contract (P1). Collected here, transcribed in
                 # one batched pass after the loop when the user injected a
@@ -311,6 +377,15 @@ def convert_pdf(pdf_path: str, out_path: str,
                 report.status = "failed"
             else:
                 report.status = "completed_with_warnings"
+        if (
+            report.status != "failed"
+            and report.confidence < config.DOC_WARN_THRESHOLD
+        ):
+            report.status = "completed_with_warnings"
+            report.warnings.append(
+                f"document confidence is {report.confidence:.0%}, below the "
+                f"{config.DOC_WARN_THRESHOLD:.0%} delivery threshold"
+            )
         report.timings["total_s"] = round(time.time() - t0, 3)
 
         # P4 confidence-flag review (plan §10 thresholds).

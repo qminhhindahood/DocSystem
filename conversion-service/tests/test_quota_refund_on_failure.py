@@ -5,6 +5,7 @@ fake Redis client, plus the worker's refund path with the pipeline stubbed.
 A failed conversion must not consume the user's daily Quota.
 """
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -52,6 +53,44 @@ def test_refund_memory_fallback():
     quota.refund("u3")
     allowed, remaining = quota.check_and_increment("u3")
     assert allowed is True and remaining == 2
+
+
+def test_rejected_redis_submissions_do_not_consume_future_refund():
+    quota = _quota_with_fake()
+    for _ in range(3):
+        assert quota.check_and_increment("u-limit")[0] is True
+
+    for _ in range(5):
+        assert quota.check_and_increment("u-limit") == (False, 0)
+
+    quota.refund("u-limit")
+    assert quota.check_and_increment("u-limit") == (True, 0)
+
+
+def test_rejected_memory_submissions_do_not_consume_future_refund():
+    quota = QuotaService(redis_client=None, limit=3)
+    for _ in range(3):
+        assert quota.check_and_increment("u-memory-limit")[0] is True
+
+    for _ in range(5):
+        assert quota.check_and_increment("u-memory-limit") == (False, 0)
+
+    quota.refund("u-memory-limit")
+    assert quota.check_and_increment("u-memory-limit") == (True, 0)
+
+
+def test_concurrent_redis_admission_never_exceeds_limit():
+    quota = _quota_with_fake()
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        results = list(executor.map(
+            lambda _: quota.check_and_increment("u-concurrent"),
+            range(30),
+        ))
+
+    assert sum(1 for allowed, _ in results if allowed) == 3
+    assert all(remaining == 0 for allowed, remaining in results if not allowed)
+    quota.refund("u-concurrent")
+    assert quota.check_and_increment("u-concurrent") == (True, 0)
 
 
 def test_worker_refunds_quota_on_failed_conversion(monkeypatch, tmp_path):

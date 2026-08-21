@@ -19,18 +19,18 @@ from dataclasses import asdict
 from pathlib import Path
 
 import config
+from artifact_cleanup import (
+    cleanup_expired_artifacts,
+    delete_job_artifacts,
+    mark_job_artifacts_complete,
+)
 from ingest.intake import IntakeError
 from job_store import JobStore
 from metrics import METRICS
 from pipeline import convert_pdf
 from quota import QuotaService
+from user_errors import UNEXPECTED_CONVERSION_ERROR, VISION_AUTH_FAILED_DETAIL
 from vision.gemini_contract import VisionAuthError
-
-# Clear Vietnamese message for a rejected BYOK key (fail-fast + refund).
-VISION_AUTH_FAILED_DETAIL = (
-    "Khóa API Gemini của bạn bị từ chối. Hãy kiểm tra lại khóa trong Cài đặt "
-    "(biểu tượng bánh răng ở thanh bên) rồi thử lại."
-)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -85,8 +85,10 @@ def process_job(store: JobStore, job: dict) -> None:
         METRICS.record_outcome(report.status)
         if report.status == "failed":
             store.update(job_id, status="failed", progress=1.0, report=asdict(report))
+            delete_job_artifacts(job_id)
             _refund_once(store, job)
         else:
+            mark_job_artifacts_complete(job_id)
             store.update(
                 job_id,
                 status=report.status,
@@ -102,6 +104,7 @@ def process_job(store: JobStore, job: dict) -> None:
         METRICS.record_redis("jobs:failed", redis_client=store.redis_client)
         METRICS.record_outcome("failed")
         store.update(job_id, status="failed", progress=1.0, error=e.detail)
+        delete_job_artifacts(job_id)
         _refund_once(store, job)
     except VisionAuthError:
         # BYOK fail-fast: the user's Gemini key was rejected. Clear message,
@@ -111,13 +114,18 @@ def process_job(store: JobStore, job: dict) -> None:
         METRICS.record_outcome("failed")
         store.update(job_id, status="failed", progress=1.0,
                      error=VISION_AUTH_FAILED_DETAIL)
+        delete_job_artifacts(job_id)
         _refund_once(store, job)
-    except Exception as e:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("job %s crashed", job_id)
         METRICS.inc("conversion_jobs_total", status="failed")
         METRICS.record_redis("jobs:failed", redis_client=store.redis_client)
         METRICS.record_outcome("failed")
-        store.update(job_id, status="failed", progress=1.0, error=str(e))
+        store.update(
+            job_id, status="failed", progress=1.0,
+            error=UNEXPECTED_CONVERSION_ERROR,
+        )
+        delete_job_artifacts(job_id)
         _refund_once(store, job)
     finally:
         # Terminal state: clear the processing-list entry so the job is not
@@ -142,8 +150,13 @@ def run_worker() -> None:
     global QUOTA
     QUOTA = QuotaService(redis_client=store.redis_client)
     store.reclaim_processing()
+    cleanup_expired_artifacts()
+    next_cleanup = time.monotonic() + config.FILE_CLEANUP_INTERVAL_S
     logger.info("conversion worker started (queue=%s)", config.CONVERSION_QUEUE_KEY)
     while True:
+        if time.monotonic() >= next_cleanup:
+            cleanup_expired_artifacts()
+            next_cleanup = time.monotonic() + config.FILE_CLEANUP_INTERVAL_S
         job = store.dequeue()
         if job is None:
             continue

@@ -18,6 +18,7 @@ from __future__ import annotations
 import io
 import json
 import sys
+import asyncio
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -31,9 +32,14 @@ import config
 import main
 import worker
 from job_store import JobStore
-from pipeline import convert_pdf
+from pipeline import _run_scanned_vision, convert_pdf
 from quota import QuotaService
-from vision.gemini_contract import GeminiVisionClient, VisionAuthError
+from vision.gemini_contract import (
+    GeminiVisionClient,
+    VisionAuthError,
+    convert_scanned_pages_parallel,
+    plan_batches,
+)
 
 TIMES = r"C:\Windows\Fonts\times.ttf"
 
@@ -224,6 +230,64 @@ def test_parse_vision_rejects_non_gemini_and_missing_key():
 
 # ─── 2. The visible test: scanned PDF + injected key -> verified DOCX ─────────
 
+def _three_page_pdf_bytes() -> bytes:
+    doc = fitz.open()
+    for page_number in range(1, 4):
+        page = doc.new_page()
+        page.insert_text((72, 72), f"original page {page_number}")
+    payload = doc.tobytes()
+    doc.close()
+    return payload
+
+
+def test_batch_plan_preserves_explicit_non_contiguous_pages():
+    assert plan_batches([1, 3, 5], batch_size=2) == [(1, 3), (5,)]
+
+
+def test_parallel_vision_receives_pdf_with_only_selected_pages():
+    class RecordingClient:
+        def __init__(self):
+            self.calls = []
+
+        def extract_batch_json(self, pdf_bytes, original_pages):
+            with fitz.open(stream=pdf_bytes, filetype="pdf") as batch_doc:
+                text = [batch_doc[index].get_text().strip() for index in range(len(batch_doc))]
+                self.calls.append((tuple(original_pages), len(batch_doc), text))
+            return []
+
+    client = RecordingClient()
+    asyncio.run(convert_scanned_pages_parallel(client, _three_page_pdf_bytes(), [1, 3]))
+
+    assert client.calls == [
+        ((1, 3), 2, ["original page 1", "original page 3"]),
+    ]
+
+
+def test_scanned_vision_rejects_blocks_from_digital_page(monkeypatch, tmp_path):
+    class MixedPageClient:
+        def __init__(self, api_key, model=None):
+            pass
+
+        def extract_batch_json(self, pdf_bytes, original_pages):
+            return [
+                {"type": "paragraph", "text": "scan one", "confidence": 0.9, "page": 1},
+                {"type": "paragraph", "text": "digital duplicate", "confidence": 0.9, "page": 2},
+                {"type": "paragraph", "text": "scan three", "confidence": 0.9, "page": 3},
+            ]
+
+    monkeypatch.setattr("vision.gemini_contract.GeminiVisionClient", MixedPageClient)
+    pdf = tmp_path / "mixed.pdf"
+    pdf.write_bytes(_three_page_pdf_bytes())
+
+    blocks, degraded, _ = _run_scanned_vision(
+        {"provider": "gemini", "model": "m", "apiKey": "k"},
+        str(pdf),
+        [1, 3],
+    )
+
+    assert [block.page for block in blocks] == [1, 3]
+    assert degraded == []
+
 class _FakeVisionClient:
     """Stands in for GeminiVisionClient at the network boundary only."""
     def __init__(self, api_key, model=None):
@@ -231,7 +295,7 @@ class _FakeVisionClient:
         self.api_key = api_key
         self.model = model
 
-    def extract_batch_json(self, pdf_bytes, first, last):
+    def extract_batch_json(self, pdf_bytes, original_pages):
         return FAKE_VISION_BLOCKS
 
 
@@ -287,6 +351,34 @@ def test_scanned_pipeline_produces_verified_decree30_docx(monkeypatch, tmp_path)
     assert "nguyễn văn a" in text
 
 
+def test_low_document_confidence_sets_delivery_warning(monkeypatch, tmp_path):
+    class LowConfidenceClient(_FakeVisionClient):
+        def extract_batch_json(self, pdf_bytes, original_pages):
+            return [{
+                "type": "paragraph",
+                "text": "Nội dung được nhận dạng với độ tin cậy thấp",
+                "confidence": 0.55,
+                "page": 1,
+            }]
+
+    monkeypatch.setattr(
+        "vision.gemini_contract.GeminiVisionClient", LowConfidenceClient
+    )
+    pdf = _make_scanned_pdf(str(tmp_path / "low-confidence.pdf"))
+
+    _, report = convert_pdf(
+        pdf,
+        str(tmp_path / "low-confidence.docx"),
+        str(tmp_path / "media"),
+        {"provider": "gemini", "model": "m", "apiKey": "k"},
+    )
+
+    assert report.coverage == 1.0
+    assert report.confidence == 0.55
+    assert report.status == "completed_with_warnings"
+    assert any("delivery threshold" in warning for warning in report.warnings)
+
+
 def test_scanned_without_vision_degrades_not_drops(tmp_path):
     """Backstop: no injected key -> scanned page degrades with a warning."""
     pdf = _make_scanned_pdf(str(tmp_path / "scan.pdf"))
@@ -298,7 +390,7 @@ def test_scanned_without_vision_degrades_not_drops(tmp_path):
 
 def test_bad_vision_batch_degrades_its_pages(monkeypatch, tmp_path):
     class _NullClient(_FakeVisionClient):
-        def extract_batch_json(self, pdf_bytes, first, last):
+        def extract_batch_json(self, pdf_bytes, original_pages):
             return None  # provider returned nothing usable
     monkeypatch.setattr("vision.gemini_contract.GeminiVisionClient", _NullClient)
 
@@ -376,19 +468,19 @@ class _FakeCandidate:
 
 def _client_with_response(resp):
     client = GeminiVisionClient(api_key="fake-key")
-    client.convert_scanned_batch = lambda pdf, first, last: resp
+    client.convert_scanned_batch = lambda pdf, original_pages: resp
     return client
 
 
 def test_extract_batch_json_plain_text():
     client = _client_with_response(_FakeResp(text=json.dumps(FAKE_VISION_BLOCKS)))
-    assert client.extract_batch_json(b"%PDF", 1, 1) == FAKE_VISION_BLOCKS
+    assert client.extract_batch_json(b"%PDF", (1,)) == FAKE_VISION_BLOCKS
 
 
 def test_extract_batch_json_strips_code_fence():
     fenced = "```json\n" + json.dumps(FAKE_VISION_BLOCKS) + "\n```"
     client = _client_with_response(_FakeResp(text=fenced))
-    assert client.extract_batch_json(b"%PDF", 1, 1) == FAKE_VISION_BLOCKS
+    assert client.extract_batch_json(b"%PDF", (1,)) == FAKE_VISION_BLOCKS
 
 
 def test_extract_batch_json_assembles_from_candidates():
@@ -396,14 +488,14 @@ def test_extract_batch_json_assembles_from_candidates():
         _FakeCandidate([_FakePart(json.dumps(FAKE_VISION_BLOCKS))]),
     ])
     client = _client_with_response(resp)
-    assert client.extract_batch_json(b"%PDF", 1, 1) == FAKE_VISION_BLOCKS
+    assert client.extract_batch_json(b"%PDF", (1,)) == FAKE_VISION_BLOCKS
 
 
 def test_extract_batch_json_malformed_returns_none():
     client = _client_with_response(_FakeResp(text="not json at all"))
-    assert client.extract_batch_json(b"%PDF", 1, 1) is None
+    assert client.extract_batch_json(b"%PDF", (1,)) is None
     empty = _client_with_response(_FakeResp(text=None))
-    assert empty.extract_batch_json(b"%PDF", 1, 1) is None
+    assert empty.extract_batch_json(b"%PDF", (1,)) is None
 
 
 def test_client_requires_injected_key():

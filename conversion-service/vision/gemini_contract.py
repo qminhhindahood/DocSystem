@@ -70,9 +70,11 @@ OUTPUT: JSON only, exactly matching the provided schema. No commentary, no markd
 """
 
 USER_PROMPT_TEMPLATE = (
-    "Transcribe pages {first}–{last} of the attached document exactly as instructed.\n"
-    'The "page" field must use the actual page numbers in the file\n'
-    "(the first page of this batch is page {first})."
+    "The attached PDF contains only selected pages from the original document.\n"
+    "Page mapping: {mapping}.\n"
+    "Transcribe every attached page exactly as instructed. The JSON `page` field "
+    "must use the ORIGINAL page number from this mapping. Do not emit any other "
+    "page number."
 )
 
 # ─── §6.3 response_schema (google-genai SDK) ──────────────────────────────────
@@ -194,17 +196,21 @@ class GeminiVisionClient:
             self._client = genai.Client(api_key=self.api_key)
         return self._client
 
-    def convert_scanned_batch(self, pdf_bytes: bytes, first_page: int, last_page: int):
+    def convert_scanned_batch(self, pdf_bytes: bytes, original_pages: tuple[int, ...]):
         """One Gemini call for up to 8 pages (plan §6.3)."""
         from google.genai import types
 
         client = self._get_client()
+        mapping = ", ".join(
+            f"batch page {index} = original page {page}"
+            for index, page in enumerate(original_pages, start=1)
+        )
         try:
             return client.models.generate_content(
                 model=self.model,
                 contents=[
                     types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
-                    USER_PROMPT_TEMPLATE.format(first=first_page, last=last_page),
+                    USER_PROMPT_TEMPLATE.format(mapping=mapping),
                 ],
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,          # §6.2
@@ -222,9 +228,10 @@ class GeminiVisionClient:
                 ) from exc
             raise
 
-    def extract_batch_json(self, pdf_bytes: bytes, first_page: int, last_page: int) -> Any:
+    def extract_batch_json(self, pdf_bytes: bytes,
+                           original_pages: tuple[int, ...]) -> Any:
         """Call + parse the JSON text into raw block dicts (pre-validation)."""
-        resp = self.convert_scanned_batch(pdf_bytes, first_page, last_page)
+        resp = self.convert_scanned_batch(pdf_bytes, original_pages)
         text = getattr(resp, "text", None)
         if text is None:
             # newer SDKs: assemble from candidates
@@ -251,12 +258,29 @@ class GeminiVisionClient:
 
 
 def plan_batches(page_numbers: list[int], batch_size: int = config.GEMINI_BATCH_PAGES):
-    """Split page numbers into <=8-page batches -> (first, last) pairs."""
+    """Split page numbers into explicit <=8-page tuples without filling gaps."""
     batches = []
     for i in range(0, len(page_numbers), batch_size):
         chunk = page_numbers[i:i + batch_size]
-        batches.append((chunk[0], chunk[-1]))
+        batches.append(tuple(chunk))
     return batches
+
+
+def _selected_pages_pdf(pdf_bytes: bytes, original_pages: tuple[int, ...]) -> bytes:
+    """Build a PDF containing only the selected 1-based original pages."""
+    import fitz
+
+    source = fitz.open(stream=pdf_bytes, filetype="pdf")
+    selected = fitz.open()
+    try:
+        for page_number in original_pages:
+            selected.insert_pdf(
+                source, from_page=page_number - 1, to_page=page_number - 1
+            )
+        return selected.tobytes()
+    finally:
+        selected.close()
+        source.close()
 
 
 async def convert_scanned_pages_parallel(
@@ -268,10 +292,13 @@ async def convert_scanned_pages_parallel(
     batches = plan_batches(page_numbers)
     sem = asyncio.Semaphore(config.GEMINI_PARALLEL_CALLS)
 
-    async def one(first: int, last: int):
+    async def one(original_pages: tuple[int, ...]):
         async with sem:
+            batch_pdf = await asyncio.to_thread(
+                _selected_pages_pdf, pdf_bytes, original_pages
+            )
             return await asyncio.to_thread(
-                client.extract_batch_json, pdf_bytes, first, last
+                client.extract_batch_json, batch_pdf, original_pages
             )
 
-    return await asyncio.gather(*(one(f, l) for f, l in batches))
+    return await asyncio.gather(*(one(batch) for batch in batches))

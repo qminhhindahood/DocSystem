@@ -22,7 +22,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any, Optional
 
 import json
@@ -31,17 +33,44 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 import config
+from artifact_cleanup import (
+    cleanup_expired_artifacts,
+    delete_job_artifacts,
+    mark_job_artifacts_complete,
+)
 from ingest.intake import IntakeError, check_password, open_document, validate_and_save
 from job_store import JobStore
 from metrics import METRICS
 from pipeline import convert_pdf
 from quota import QuotaService
 from triage.triage import SCANNED, triage_page
+from user_errors import UNEXPECTED_CONVERSION_ERROR, VISION_AUTH_FAILED_DETAIL
+from vision.gemini_contract import VisionAuthError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Conversion Service", version=config.SERVICE_VERSION)
+
+async def _artifact_cleanup_loop() -> None:
+    while True:
+        await asyncio.sleep(config.FILE_CLEANUP_INTERVAL_S)
+        await asyncio.to_thread(cleanup_expired_artifacts)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    cleanup_task = asyncio.create_task(_artifact_cleanup_loop())
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await cleanup_task
+
+
+app = FastAPI(
+    title="Conversion Service", version=config.SERVICE_VERSION, lifespan=_lifespan
+)
 
 # Job state: Redis-backed when reachable, in-memory otherwise.
 STORE = JobStore()
@@ -140,7 +169,9 @@ async def _run_job_in_process(job_id: str, pdf_path: str, filename: str,
         _record_job_metrics(report)
         if report.status == "failed":
             _local_job(job_id, status="failed", report=asdict(report))
+            delete_job_artifacts(job_id)
         else:
+            mark_job_artifacts_complete(job_id)
             _local_job(job_id, status=report.status, resultUrl=f"/convert/{job_id}/result",
                        confidence=round(report.confidence, 3),
                        degradedPages=report.degraded_pages, report=asdict(report))
@@ -148,11 +179,24 @@ async def _run_job_in_process(job_id: str, pdf_path: str, filename: str,
         METRICS.inc("conversion_jobs_total", status="failed")
         METRICS.record_outcome("failed")
         _local_job(job_id, status="failed", error=e.detail)
-    except Exception as e:  # noqa: BLE001
+        delete_job_artifacts(job_id)
+    except VisionAuthError:
+        logger.exception("conversion job %s rejected the Gemini key", job_id)
+        METRICS.inc("conversion_jobs_total", status="failed")
+        METRICS.record_outcome("failed")
+        _local_job(job_id, status="failed", error=VISION_AUTH_FAILED_DETAIL)
+        delete_job_artifacts(job_id)
+    except Exception:  # noqa: BLE001
         logger.exception("conversion job %s failed", job_id)
         METRICS.inc("conversion_jobs_total", status="failed")
         METRICS.record_outcome("failed")
-        _local_job(job_id, status="failed", error=str(e))
+        _local_job(job_id, status="failed", error=UNEXPECTED_CONVERSION_ERROR)
+        delete_job_artifacts(job_id)
+    finally:
+        try:
+            Path(pdf_path).unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 @app.get("/health")
@@ -226,7 +270,6 @@ async def convert(
     vision_config = _parse_vision(vision)
     if vision_config is None and _has_scanned_pages(pdf_path):
         try:
-            from pathlib import Path
             Path(pdf_path).unlink()
         except OSError:
             pass
@@ -239,7 +282,6 @@ async def convert(
         allowed, remaining = QUOTA.check_and_increment(x_user_id)
         if not allowed:
             try:
-                from pathlib import Path
                 Path(pdf_path).unlink()
             except OSError:
                 pass
@@ -374,7 +416,6 @@ async def convert_bulk(
         # user's own Gemini key; rejected files cost nothing.
         if vision_config is None and _has_scanned_pages(pdf_path):
             try:
-                from pathlib import Path
                 Path(pdf_path).unlink()
             except OSError:
                 pass
@@ -386,7 +427,6 @@ async def convert_bulk(
             allowed, _remaining = QUOTA.check_and_increment(x_user_id)
             if not allowed:
                 try:
-                    from pathlib import Path
                     Path(pdf_path).unlink()
                 except OSError:
                     pass

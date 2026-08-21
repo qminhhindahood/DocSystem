@@ -76,18 +76,17 @@ def table_quality_gate(table) -> bool:
     """Accept a PyMuPDF find_tables() result only if cell fill >= 70% and
     >= 2 columns detected (plan §4 TABLE_HEAVY decision)."""
     try:
-        cells = table.cells or []
+        rows = table.extract() or []
+        col_count = int(getattr(table, "col_count", 0))
     except Exception:
         return False
-    if not cells:
+    if not rows or col_count < config.TABLE_MIN_COLUMNS:
         return False
-    col_count = len(table.header.cells) if getattr(table, "header", None) else 0
-    if col_count == 0:
-        # fall back to distinct x0 positions of cells
-        xs = {round(c[0]) for c in cells if c}
-        col_count = len(xs)
-    if col_count < config.TABLE_MIN_COLUMNS:
-        return False
-    total = len(cells)
-    filled = sum(1 for c in cells if c is not None)
+    total = sum(len(row) for row in rows)
+    filled = sum(
+        1
+        for row in rows
+        for cell in row
+        if cell is not None and str(cell).strip()
+    )
     return (filled / total) >= config.TABLE_CELL_FILL_MIN if total else False

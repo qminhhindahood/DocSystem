@@ -4,8 +4,11 @@ Redis INCR with daily expiry; in-memory fallback mirrors the same semantics.
 """
 from __future__ import annotations
 
+import threading
 import time
 from datetime import datetime, timezone
+
+from redis.exceptions import WatchError
 
 import config
 
@@ -17,6 +20,7 @@ class QuotaService:
         self._redis = redis_client
         self.limit = limit
         self._memory: dict[str, tuple[int, float]] = {}
+        self._memory_lock = threading.Lock()
 
     def _key(self, user_id: str) -> str:
         day = datetime.now(timezone.utc).strftime("%Y%m%d")
@@ -27,40 +31,62 @@ class QuotaService:
         key = self._key(user_id)
         if self._redis is not None:
             try:
-                count = self._redis.incr(key)
-                if count == 1:
-                    # expire at end of the UTC day
-                    self._redis.expire(key, 24 * 3600)
-                if count > self.limit:
-                    return False, 0
-                return True, self.limit - count
+                while True:
+                    try:
+                        with self._redis.pipeline() as pipe:
+                            pipe.watch(key)
+                            count = max(0, int(pipe.get(key) or 0))
+                            if count >= self.limit:
+                                pipe.unwatch()
+                                return False, 0
+                            pipe.multi()
+                            pipe.incr(key)
+                            if count == 0:
+                                pipe.expire(key, 24 * 3600)
+                            result = pipe.execute()
+                            new_count = int(result[0])
+                            return True, self.limit - new_count
+                    except WatchError:
+                        continue
             except Exception:  # noqa: BLE001
                 self._redis = None
         # in-memory fallback
         now = time.time()
-        count, expires = self._memory.get(key, (0, now + 86400))
-        if now > expires:
-            count, expires = 0, now + 86400
-        count += 1
-        self._memory[key] = (count, expires)
-        if count > self.limit:
-            return False, 0
-        return True, self.limit - count
+        with self._memory_lock:
+            count, expires = self._memory.get(key, (0, now + 86400))
+            if now > expires:
+                count, expires = 0, now + 86400
+            if count >= self.limit:
+                return False, 0
+            count += 1
+            self._memory[key] = (count, expires)
+            return True, self.limit - count
 
     def refund(self, user_id: str) -> None:
         """Give one conversion slot back (failed conversion). Never below zero."""
         key = self._key(user_id)
         if self._redis is not None:
             try:
-                count = self._redis.decr(key)
-                if count < 0:
-                    self._redis.set(key, 0, ex=24 * 3600)
-                return
+                while True:
+                    try:
+                        with self._redis.pipeline() as pipe:
+                            pipe.watch(key)
+                            count = max(0, int(pipe.get(key) or 0))
+                            if count == 0:
+                                pipe.unwatch()
+                                return
+                            pipe.multi()
+                            pipe.decr(key)
+                            pipe.execute()
+                            return
+                    except WatchError:
+                        continue
             except Exception:  # noqa: BLE001
                 self._redis = None
         # in-memory fallback
         now = time.time()
-        count, expires = self._memory.get(key, (0, now + 86400))
-        if now > expires:
-            return
-        self._memory[key] = (max(0, count - 1), expires)
+        with self._memory_lock:
+            count, expires = self._memory.get(key, (0, now + 86400))
+            if now > expires:
+                return
+            self._memory[key] = (max(0, count - 1), expires)
