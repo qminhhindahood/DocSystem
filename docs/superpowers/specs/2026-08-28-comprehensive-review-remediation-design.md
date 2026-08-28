@@ -43,18 +43,30 @@ will remain a process-only signal. Missing required configuration must prevent
 the service from being considered ready instead of producing a streamed error
 from `/login`.
 
-No existing local image or volume is deleted automatically. After the fixed
-image is verified, operators will be told to rebuild before publishing and to
-treat older conversion images as potentially sensitive.
+Standalone Compose defaults password recovery to `disabled`; operators opt into
+`email` only after configuring SMTP. A Turnstile site key is mandatory whenever
+public registration is enabled, and readiness reports that mismatch. The same
+registration-mode value is passed to frontend and backend. When registration is
+disabled, signup entry points are hidden and `/signup` renders an explicit
+unavailable state; the backend remains authoritative and returns HTTP 403.
+
+No database or application-data volume is deleted automatically. The old image
+identity is recorded before rebuilding; after the fixed image is verified, the
+known document-bearing image and only its dangling build layers are removed.
+Unrelated images, caches, and every project volume remain untouched.
 
 ## Existing-Volume Migration Compatibility
 
 Fresh databases continue to run `prisma migrate deploy` normally. Before that
 command, a read-only baseline detector will inspect databases that have product
 tables but no Prisma migration history. It may request `prisma migrate resolve
---applied 20260901000000_init_standalone_auth` only when all required current
-tables and columns are present. A mismatch fails closed with a backup-safe,
-actionable message; it never drops, truncates, or rewrites user tables.
+--applied 20260901000000_init_standalone_auth` only when all three current tables
+are behaviorally compatible: every required current column has a compatible
+type, current primary/unique/foreign-key relationships exist, and no extra
+required column without a default can block Prisma writes. Unrelated legacy
+tables and harmless nullable or defaulted extra columns are permitted. A partial
+or divergent schema fails closed with a backup-safe, actionable message; the
+baseline path never creates, drops, truncates, or rewrites user tables.
 
 The detector and Compose command will be covered by tests for a fresh database,
 a compatible pre-baseline database, an already migrated database, and an
@@ -68,11 +80,16 @@ and page triage to worker threads with `asyncio.to_thread`. Bulk admission will
 remain ordered and bounded while yielding the event loop between files.
 
 The backend conversion client will stream files from disk into multipart
-requests rather than materializing Buffers and Blobs. Bulk requests will also
-enforce an aggregate byte limit so the accepted contract has a predictable
-memory and transport bound. Single and bulk route cleanup ownership remains
+requests rather than materializing Buffers and Blobs. Bulk requests retain the
+public contract of ten files at 50 MB each and enforce the implied 500 MB
+aggregate limit explicitly. Single and bulk route cleanup ownership remains
 unchanged: the backend deletes staging files after the conversion service has
 accepted or rejected the request.
+
+Submission requests use a 300-second default timeout, configurable up to the
+existing 600-second ceiling, so maximum-size admission does not inherit the old
+30-second limit and lose accepted job identifiers. Status and report reads keep
+their existing short timeouts.
 
 Multer MIME and size failures will be normalized at the route boundary. Invalid
 types return HTTP 400, files over 50 MB return HTTP 413, and unexpected errors
@@ -82,9 +99,11 @@ retain the generic HTTP 500 response. Partial staging files are removed.
 
 Queue workers will use strict Redis semantics rather than the API's development
 memory fallback. A Redis failure during load, save, dequeue, or terminal cleanup
-raises a dedicated availability error. The worker exits so Compose restarts it,
-leaves the source file and processing-list entry intact, and reclaims that job
-after Redis recovers.
+raises a dedicated availability error. The worker exits non-zero so Compose
+restarts it, leaves the source file and processing-list entry intact, and
+reclaims that job after Redis recovers. A directly launched worker exits with an
+actionable operator message instead of attempting an ambiguous in-process
+recovery.
 
 The API may retain its in-process development fallback, but a store that was
 previously Redis-backed will attempt a bounded reconnect before changing mode.
@@ -104,6 +123,9 @@ narrow top or bottom page band. Repeated body paragraphs remain intact. Split
 tables merge only when pages are consecutive, column counts match, normalized
 headers match or the continuation omits a header, and table boundary evidence
 indicates continuation. Independent same-width tables retain their own headers.
+When continuation cannot be proven, content remains separate; fidelity takes
+precedence over cosmetic merging and the report may surface an uncertainty
+warning.
 
 Regression fixtures will cover page-two top content, unrecognized bottom
 content, true running headers, repeated body clauses, valid table continuation,
@@ -117,10 +139,10 @@ untrusted address is used. Tests will include a clean one-proxy request and a
 client-supplied forwarding value that the trusted proxy appends to.
 
 All conversion-job mutations will update React state and `jobsRef` through one
-helper. Report toggles therefore survive concurrent polling. PDF preview URLs
-will be created lazily, mounted only for the expanded preview, and revoked when
-that preview closes or its job leaves the visible set. The page will not mount
-an iframe for every completed job.
+helper. Report toggles therefore survive concurrent polling. Completed jobs
+offer an explicit “Xem PDF gốc” action. At most one source preview is open;
+opening it creates the object URL lazily, while closing or replacing it revokes
+the URL immediately. The page never mounts an iframe for every completed job.
 
 The theme icon target will be at least 44 by 44 pixels. Authentication and root
 metadata copy will describe only PDF-to-DOCX conversion, confidence review, and
@@ -139,7 +161,9 @@ updated until full npm audits have no known high-severity findings, and CI will
 audit development dependencies as a separate gate. The Python test-client
 dependency will move to the supported HTTPX compatibility path so the suite is
 warning-free. Dependency updates must not introduce a production package solely
-to silence an audit.
+to silence an audit. Major upgrades are permitted for development-only tooling
+when focused and full verification stay green; production major upgrades require
+a production advisory and separate justification.
 
 ## Testing and Verification
 
@@ -180,3 +204,10 @@ does not invent or store external credentials.
 - Reintroducing generation, RAG, chat, template, or admin surfaces.
 - Adding server-owned vision credentials.
 - Redesigning the visual language beyond the reviewed copy and target-size fixes.
+
+## Worktree and Commit Policy
+
+The implementation remains uncommitted because it overlaps user-owned changes
+that predate this remediation. The already committed design record stays in
+history, but source changes are handed back as a reviewed working-tree diff with
+an exact file and verification report rather than commits that blur authorship.
