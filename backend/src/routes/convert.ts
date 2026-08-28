@@ -50,6 +50,46 @@ const router = express.Router();
 
 type MulterRequest = Request & { file?: Express.Multer.File };
 
+/** Best-effort removal of any staging files multer recorded on the request. */
+function removeStagedFiles(req: Request): void {
+  const multerReq = req as MulterRequest & { files?: Express.Multer.File[] };
+  const staged: Express.Multer.File[] = [];
+  if (multerReq.file) staged.push(multerReq.file);
+  if (Array.isArray(multerReq.files)) staged.push(...multerReq.files);
+  for (const file of staged) {
+    void fs.promises.unlink(file.path).catch(() => undefined);
+  }
+}
+
+/**
+ * Upload error contract (comprehensive review remediation, 2026-08-28):
+ * normalize Multer failures at the route boundary. Wrong MIME type -> 400,
+ * file over the 50 MB limit -> 413, unexpected errors keep the generic 500
+ * via the error handler. Partially staged files never survive a rejection.
+ */
+function withUploadErrorContract(
+  parse: (req: Request, res: Response, next: (err?: unknown) => void) => void,
+) {
+  return (req: Request, res: Response, next: (err?: unknown) => void) => {
+    parse(req, res, (err?: unknown) => {
+      if (!err) return next();
+      removeStagedFiles(req);
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res
+            .status(413)
+            .json({ error: `File exceeds the ${MAX_FILE_SIZE / (1024 * 1024)} MB limit` });
+        }
+        return res.status(400).json({ error: 'Upload rejected' });
+      }
+      if (err instanceof Error && err.message === 'Only PDF files are allowed') {
+        return res.status(400).json({ error: err.message });
+      }
+      return next(err);
+    });
+  };
+}
+
 /**
  * Owner-scope guard (ticket 03): verify the Conversion Job belongs to the
  * authenticated user before anything is returned. Unknown job and
@@ -82,7 +122,7 @@ router.post(
   userAuthMiddleware,
   requireAuth,
   uploadLimiter,
-  (req, res, next) => upload.single('file')(req, res, next),
+  withUploadErrorContract(upload.single('file')),
   async (req: Request, res: Response) => {
     const multerReq = req as MulterRequest;
     const file = multerReq.file;
@@ -121,7 +161,7 @@ router.post(
   userAuthMiddleware,
   requireAuth,
   uploadLimiter,
-  (req, res, next) => upload.array('files', 10)(req, res, next),
+  withUploadErrorContract(upload.array('files', 10)),
   async (req: Request, res: Response) => {
     const multerReq = req as Request & { files?: Express.Multer.File[] };
     const files = multerReq.files ?? [];

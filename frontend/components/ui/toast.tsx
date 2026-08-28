@@ -1,8 +1,10 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { CheckCircle, AlertTriangle, XCircle, Info, X } from 'lucide-react';
 import { cn } from '@/components/lib/cn';
+import { springSnappy } from '@/lib/motion';
 
 type ToastVariant = 'success' | 'warning' | 'error' | 'info';
 
@@ -41,10 +43,10 @@ const ICONS: Record<ToastVariant, React.ComponentType<{ className?: string }>> =
 };
 
 const VARIANT_STYLES: Record<ToastVariant, string> = {
-  success: 'border-success/35 bg-success-surface',
-  warning: 'border-warning/35 bg-warning-surface',
-  error: 'border-error/35 bg-error-surface',
-  info: 'border-info/35 bg-info-surface',
+  success: 'border-success-border bg-success-surface',
+  warning: 'border-warning-border bg-warning-surface',
+  error: 'border-error-border bg-error-surface',
+  info: 'border-info-border bg-info-surface',
 };
 
 let counter = 0;
@@ -81,42 +83,49 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         aria-atomic="true"
         className="pointer-events-none fixed bottom-4 right-4 z-toast flex w-[calc(100%-2rem)] max-w-sm flex-col gap-2"
       >
-        {toasts.map((t) => {
-          const Icon = ICONS[t.variant];
-          return (
-            <div
-              key={t.id}
-              role="alert"
-              className={cn(
-                'pointer-events-auto flex items-start gap-3 rounded-control border p-4 shadow-floating animate-fade-in',
-                VARIANT_STYLES[t.variant],
-              )}
-            >
-              <Icon
+        <AnimatePresence initial={false}>
+          {toasts.map((t) => {
+            const Icon = ICONS[t.variant];
+            return (
+              <motion.div
+                key={t.id}
+                role="alert"
+                layout
+                initial={{ opacity: 0, y: 14, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, x: 32, transition: { duration: 0.16, ease: 'easeIn' } }}
+                transition={springSnappy}
                 className={cn(
-                  'w-5 h-5 flex-shrink-0 mt-0.5',
-                  t.variant === 'success' && 'text-success',
-                  t.variant === 'warning' && 'text-warning',
-                  t.variant === 'error' && 'text-error',
-                  t.variant === 'info' && 'text-info',
+                  'pointer-events-auto flex items-start gap-3 rounded-control border p-4 shadow-floating',
+                  VARIANT_STYLES[t.variant],
                 )}
-              />
-              <div className="flex-1 min-w-0">
-                <p className="text-control font-semibold text-text-primary">{t.title}</p>
-                {t.description && (
-                  <p className="mt-1 text-metadata text-text-secondary">{t.description}</p>
-                )}
-              </div>
-              <button
-                onClick={() => dismiss(t.id)}
-                aria-label="Đóng"
-                className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-control text-text-muted hover:bg-surface-strong hover:text-text-primary"
               >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          );
-        })}
+                <Icon
+                  className={cn(
+                    'w-5 h-5 flex-shrink-0 mt-0.5',
+                    t.variant === 'success' && 'text-success',
+                    t.variant === 'warning' && 'text-warning',
+                    t.variant === 'error' && 'text-error',
+                    t.variant === 'info' && 'text-info',
+                  )}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-control font-semibold text-text-primary">{t.title}</p>
+                  {t.description && (
+                    <p className="mt-1 text-metadata text-text-secondary">{t.description}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => dismiss(t.id)}
+                  aria-label="Đóng"
+                  className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-control text-text-muted hover:bg-surface-strong hover:text-text-primary"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
       </div>
     </ToastContext.Provider>
   );

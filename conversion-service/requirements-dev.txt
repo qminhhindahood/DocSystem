@@ -1,2 +1,5 @@
 pytest>=8.0
 fakeredis>=2.21
+# Supported TestClient backend: starlette.testclient prefers httpx2 and
+# deprecates the plain-httpx fallback (StarletteDeprecationWarning).
+httpx2>=2.8

@@ -1,0 +1,43 @@
+# Root .dockerignore — the conversion service builds from the REPO ROOT
+# context (docker-compose.yml: context: ., dockerfile:
+# conversion-service/Dockerfile). Everything below stays out of every image
+# built from this context. Backend and frontend build from their own
+# directories, so their contexts are unaffected.
+
+# Repository metadata
+.git/
+.github/
+.gitignore
+.gitattributes
+
+# Virtual environments and dependency trees
+**/.venv/
+**/node_modules/
+
+# Python caches and test outputs
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# Runtime work directories — never bake job data into an image
+conversion-service/work/
+backend/uploads/
+
+# Build and test artifacts
+**/.next/
+**/dist/
+**/coverage/
+.artifacts/
+.scratch/
+
+# Local environment files
+**/.env
+**/.env.*
+
+# Trees the conversion image does not need
+backend/
+frontend/
+docs/
+ops/

@@ -14,6 +14,7 @@ refunds the submitting user's daily quota (at most once per job).
 from __future__ import annotations
 
 import logging
+import sys
 import time
 from dataclasses import asdict
 
@@ -25,10 +26,17 @@ from artifact_cleanup import (
     mark_job_artifacts_complete,
 )
 from ingest.intake import IntakeError
-from job_store import JobStore
+from job_store import JobStore, RedisUnavailableError
 from metrics import METRICS
 from pipeline import convert_pdf
 from quota import QuotaService
+from refund_journal import (
+    PendingQuotaRefund,
+    delete_pending_refund,
+    from_job,
+    load_pending_refunds,
+    save_pending_refund,
+)
 from user_errors import UNEXPECTED_CONVERSION_ERROR, VISION_AUTH_FAILED_DETAIL
 from vision.gemini_contract import VisionAuthError
 
@@ -40,42 +48,57 @@ logger = logging.getLogger(__name__)
 QUOTA = QuotaService()
 
 
+def _pending_refund(job: dict) -> PendingQuotaRefund | None:
+    return from_job(job)
+
+
 def _refund_once(store: JobStore, job: dict) -> bool:
     """Refund the submitting user's quota once per failed job."""
-    user_id = job.get("userId")
-    if not user_id:
+    pending = _pending_refund(job)
+    if pending is None:
         return True
-    flag_key = f"{config.JOB_STATE_PREFIX}{job['jobId']}:refunded"
-    quota_key = job.get("quotaKey") or QUOTA._key(user_id)
+    flag_key = f"{config.JOB_STATE_PREFIX}{pending.job_id}:refunded"
     try:
         QUOTA.refund_charge_once(
             flag_key,
-            quota_key,
+            pending.quota_key,
             ttl_s=config.JOB_STATE_TTL_S,
         )
     except Exception as error:  # noqa: BLE001
-        logger.warning("quota refund failed for job %s: %s", job["jobId"], error)
+        logger.warning("quota refund failed for job %s: %s", pending.job_id, error)
+        try:
+            save_pending_refund(pending)
+        except OSError as journal_error:
+            logger.error(
+                "could not persist pending refund for job %s: %s",
+                pending.job_id,
+                journal_error,
+            )
         return False
     store.update(
-        job["jobId"],
+        pending.job_id,
         quotaRefunded=True,
         quotaRefundPending=False,
     )
+    delete_pending_refund(pending.job_id)
     return True
 
 
 def process_job(store: JobStore, job: dict) -> None:
     job_id = job["jobId"]
-    pdf_path = job["pdfPath"]
+    pdf_path = job.get("pdfPath")
     prior_state = store.load(job_id) or {}
-    if prior_state.get("quotaRefundPending"):
+    if job.get("refundOnly") or prior_state.get("quotaRefundPending"):
         if _refund_once(store, job):
-            store.finish_processing(job)
+            store.finish_refund_processing(job_id)
         else:
             time.sleep(config.QUOTA_REFUND_RETRY_DELAY_S)
-            if not store.requeue_processing(job):
+            pending = _pending_refund(job)
+            replacement = pending.payload() if pending else job
+            if not store.requeue_processing(job, replacement):
                 logger.error("job %s refund remains pending in processing", job_id)
-        delete_source(pdf_path)
+        if pdf_path:
+            delete_source(pdf_path)
         return
 
     refund_pending = False
@@ -113,6 +136,12 @@ def process_job(store: JobStore, job: dict) -> None:
                 report=asdict(report),
             )
         logger.info("job %s -> %s", job_id, report.status)
+    except RedisUnavailableError:
+        logger.error(
+            "job %s lost Redis; preserving source and processing entry for reclaim",
+            job_id,
+        )
+        raise
     except IntakeError as e:
         METRICS.inc("conversion_jobs_total", status="failed")
         METRICS.record_redis("jobs:failed", redis_client=store.redis_client)
@@ -145,19 +174,43 @@ def process_job(store: JobStore, job: dict) -> None:
         # Terminal state: clear the processing-list entry so the job is not
         # reclaimed, then remove the uploaded source. The DOCX result stays
         # until its JobStore record TTL expires.
-        if refund_pending:
-            store.update(job_id, quotaRefundPending=True)
-            time.sleep(config.QUOTA_REFUND_RETRY_DELAY_S)
-            if not store.requeue_processing(job):
-                logger.error("job %s refund remains pending in processing", job_id)
+        redis_failed = isinstance(sys.exc_info()[1], RedisUnavailableError)
+        if redis_failed:
+            logger.error(
+                "job %s cleanup skipped so the strict worker can reclaim it",
+                job_id,
+            )
         else:
-            store.finish_processing(job)
-        delete_source(pdf_path)
+            if refund_pending:
+                store.update(job_id, quotaRefundPending=True)
+                time.sleep(config.QUOTA_REFUND_RETRY_DELAY_S)
+                pending = _pending_refund(job)
+                replacement = pending.payload() if pending else job
+                if not store.requeue_processing(job, replacement):
+                    logger.error("job %s refund remains pending in processing", job_id)
+            else:
+                store.finish_processing(job)
+            if pdf_path:
+                delete_source(pdf_path)
+
+
+def _enqueue_journal_refunds(store: JobStore) -> int:
+    """Put persisted minimal refunds back on the queue after outage/restart."""
+    queued = 0
+    for pending in load_pending_refunds():
+        try:
+            store.enqueue(pending.payload())
+            queued += 1
+        except RedisUnavailableError:
+            raise
+        except RuntimeError:
+            break
+    return queued
 
 
 def run_worker() -> None:
     config.ensure_dirs()
-    store = JobStore()
+    store = JobStore(strict_redis=True)
     if not store.using_redis:
         raise SystemExit(
             "worker requires Redis (queue mode). Start Redis or run the API "
@@ -166,6 +219,7 @@ def run_worker() -> None:
     global QUOTA
     QUOTA = QuotaService(redis_client=store.redis_client)
     store.reclaim_processing()
+    _enqueue_journal_refunds(store)
     cleanup_expired_artifacts()
     next_cleanup = time.monotonic() + config.FILE_CLEANUP_INTERVAL_S
     logger.info("conversion worker started (queue=%s)", config.CONVERSION_QUEUE_KEY)
@@ -175,9 +229,20 @@ def run_worker() -> None:
             next_cleanup = time.monotonic() + config.FILE_CLEANUP_INTERVAL_S
         job = store.dequeue()
         if job is None:
+            _enqueue_journal_refunds(store)
             continue
         process_job(store, job)
 
 
+def worker_main() -> int:
+    """Run the strict worker and map Redis outages to a restartable exit."""
+    try:
+        run_worker()
+    except RedisUnavailableError as error:
+        logger.error("conversion worker exiting: %s", error)
+        return 1
+    return 0
+
+
 if __name__ == "__main__":
-    run_worker()
+    raise SystemExit(worker_main())

@@ -46,9 +46,9 @@ export function LLMSettingsDialog() {
           <Dialog.Title className="text-section-title text-text-primary">Cấu hình khóa API</Dialog.Title>
           <Dialog.Description id="llm-settings-description" className="mt-1 text-control text-text-muted">Khóa Google Gemini được mã hóa và lưu riêng cho tài khoản này để chuyển đổi PDF có trang quét (scanned).</Dialog.Description>
         </div>
-        <button type="button" onClick={() => requestOpen(false)} aria-label="Đóng cài đặt" className="absolute right-4 top-4 rounded-compact p-2 text-text-muted hover:bg-surface-strong hover:text-text-primary"><X className="h-4 w-4" /></button>
+        <button type="button" onClick={() => requestOpen(false)} aria-label="Đóng cài đặt" className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-compact text-text-muted hover:bg-surface-strong hover:text-text-primary"><X className="h-4 w-4" /></button>
         <div hidden={confirmDiscard}><LLMProviderForm onDirtyChange={(value) => { dirtyRef.current = value; }} onSaved={() => { dirtyRef.current = false; setOpen(false); toast({ title: 'Đã lưu cấu hình khóa API', description: 'Nhà cung cấp của bạn đã được cập nhật.', variant: 'success' }); }} /></div>
-        {confirmDiscard && <div role="alert" className="rounded-panel border border-warning/30 bg-warning-surface p-4">
+        {confirmDiscard && <div role="alert" className="rounded-panel border border-warning-border bg-warning-surface p-4">
           <p className="font-medium text-text-primary">Bỏ các thay đổi chưa lưu?</p>
           <p className="mt-1 text-control text-text-muted">Những thông tin bạn vừa chỉnh sửa sẽ không được lưu.</p>
           <div className="mt-4 flex justify-end gap-2"><Button variant="secondary" onClick={() => setConfirmDiscard(false)}>Tiếp tục chỉnh sửa</Button><Button variant="destructive" onClick={() => { dirtyRef.current = false; setConfirmDiscard(false); setOpen(false); }}>Bỏ thay đổi</Button></div>

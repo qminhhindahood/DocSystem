@@ -113,10 +113,24 @@ def test_worker_refunds_quota_on_failed_conversion(monkeypatch, tmp_path):
     quota = QuotaService(redis_client=store.redis_client, limit=3)
     monkeypatch.setattr(worker, "QUOTA", quota)
 
+    charge, _remaining = quota.charge("u9")
+    assert charge is not None
+
     pdf = tmp_path / "doc.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
-    job = {"jobId": "jfail", "pdfPath": str(pdf), "filename": "doc.pdf", "userId": "u9"}
-    store.save("jfail", {"jobId": "jfail", "status": "queued", "userId": "u9"})
+    job = {
+        "jobId": "jfail",
+        "pdfPath": str(pdf),
+        "filename": "doc.pdf",
+        "userId": "u9",
+        "quotaKey": charge.key,
+    }
+    store.save("jfail", {
+        "jobId": "jfail",
+        "status": "queued",
+        "userId": "u9",
+        "quotaKey": charge.key,
+    })
     store.enqueue(job)
     dequeued = store.dequeue(timeout=1)
 
@@ -132,7 +146,6 @@ def test_worker_refunds_quota_on_failed_conversion(monkeypatch, tmp_path):
         lambda pdf_path, out_path, media_dir, vision=None: (out_path, _FailedReport()),
     )
 
-    assert quota.check_and_increment("u9")[0] is True  # charged on submit
     assert _count(quota, "u9") == 1
 
     worker.process_job(store, dequeued)
@@ -146,6 +159,43 @@ def test_worker_refunds_quota_on_failed_conversion(monkeypatch, tmp_path):
     # A second terminal handling of the same job must not refund again.
     worker.process_job(store, dequeued)
     assert _count(quota, "u9") == 0
+
+
+def test_worker_does_not_refund_a_recomputed_day_when_charge_key_is_missing(
+    monkeypatch, tmp_path,
+):
+    """A legacy payload must not decrement an unrelated current-day counter."""
+    store = JobStore(redis_client=fakeredis.FakeRedis(decode_responses=True))
+    quota = QuotaService(redis_client=store.redis_client, limit=3)
+    monkeypatch.setattr(worker, "QUOTA", quota)
+
+    current_charge, _remaining = quota.charge("legacy-user")
+    assert current_charge is not None
+    source = tmp_path / "legacy.pdf"
+    source.write_bytes(b"%PDF-1.4 fake")
+    job = {
+        "jobId": "legacy-job",
+        "pdfPath": str(source),
+        "filename": "legacy.pdf",
+        "userId": "legacy-user",
+    }
+    store.save("legacy-job", {
+        "jobId": "legacy-job",
+        "status": "queued",
+        "userId": "legacy-user",
+    })
+    monkeypatch.setattr(
+        worker,
+        "convert_pdf",
+        lambda *_args, **_kwargs: (
+            "unused.docx",
+            ConversionReport(status="failed", confidence=0.0),
+        ),
+    )
+
+    worker.process_job(store, job)
+
+    assert int(quota._redis.get(current_charge.key) or 0) == 1
 
 
 def test_worker_refunds_the_admission_day_after_utc_rollover(monkeypatch, tmp_path):
@@ -337,6 +387,7 @@ def test_worker_requeues_failed_refund_as_refund_only_work(monkeypatch, tmp_path
     first = store.dequeue(timeout=1)
     monkeypatch.setattr(worker, "QUOTA", quota)
     monkeypatch.setattr(config, "QUOTA_REFUND_RETRY_DELAY_S", 0)
+    monkeypatch.setattr(config, "REFUND_DIR", tmp_path / "refunds", raising=False)
     conversions = 0
 
     def failed_conversion(*_args, **_kwargs):
@@ -360,11 +411,19 @@ def test_worker_requeues_failed_refund_as_refund_only_work(monkeypatch, tmp_path
     worker.process_job(store, first)
     assert store.redis_client.llen(config.CONVERSION_QUEUE_KEY) == 1
     assert store.load("requeue-job")["quotaRefundPending"] is True
+    assert (config.REFUND_DIR / "requeue-job.json").exists()
 
     retry = store.dequeue(timeout=1)
+    assert retry == {
+        "jobId": "requeue-job",
+        "userId": "requeue-user",
+        "quotaKey": charge.key,
+        "refundOnly": True,
+    }
     worker.process_job(store, retry)
 
     assert conversions == 1
     assert int(quota._redis.get(charge.key) or 0) == 0
     assert store.load("requeue-job")["quotaRefundPending"] is False
     assert store.redis_client.llen(config.CONVERSION_PROCESSING_KEY) == 0
+    assert not (config.REFUND_DIR / "requeue-job.json").exists()

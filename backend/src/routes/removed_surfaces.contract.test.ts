@@ -125,6 +125,25 @@ describe('removed master-stack surfaces (standalone prune, ticket 04)', () => {
     expect(readinessSrc).not.toContain('DOCUMENT_RENDERER_URL');
     expect(readinessSrc).toContain('conversionServiceHealthy');
   });
+
+  it('shared resilience helpers expose no removed-service APIs', () => {
+    const breakers = fs.readFileSync(path.join(srcRoot, 'utils', 'circuit_breaker.ts'), 'utf-8');
+    const redis = fs.readFileSync(path.join(srcRoot, 'utils', 'redis.ts'), 'utf-8');
+    const timeouts = fs.readFileSync(path.join(srcRoot, 'middleware', 'timeout.ts'), 'utf-8');
+
+    for (const removed of ['lmStudioBreaker', 'doclingBreaker', 'embeddingsBreaker']) {
+      expect(breakers).not.toContain(removed);
+    }
+    for (const removed of [
+      'RedisState', 'initializeSession', 'getSession', 'updateSession',
+      'setPlanningState', 'setResearchingState', 'setWritingState',
+      'markComplete', 'markError', 'lPush', 'rPopLPush', 'setNx',
+    ]) {
+      expect(redis).not.toContain(removed);
+    }
+    expect(timeouts).not.toContain('generationTimeout');
+    expect(timeouts).not.toContain('Document generation');
+  });
 });
 
 describe('removed master-stack directories (standalone prune, ticket 08)', () => {

@@ -44,15 +44,19 @@
   --color-success: #0E5731;
   --color-success-text: #0E5731;
   --color-success-surface: #E4F4EA;
+  --color-success-border: rgba(14, 87, 49, 0.35);
   --color-warning: #7A4200;
   --color-warning-text: #7A4200;
   --color-warning-surface: #FBF0DE;
+  --color-warning-border: rgba(122, 66, 0, 0.35);
   --color-error: #A81E19;
   --color-error-text: #A81E19;
   --color-error-surface: #FBE9E7;
+  --color-error-border: rgba(168, 30, 25, 0.35);
   --color-info: #23429F;
   --color-info-text: #23429F;
   --color-info-surface: #E7EDFB;
+  --color-info-border: rgba(35, 66, 159, 0.35);
 
   --color-diff-insert: rgba(14, 87, 49, 0.12);
   --color-diff-remove: rgba(168, 30, 25, 0.12);
@@ -68,10 +72,16 @@
   --shadow-workspace: 0 18px 50px rgba(22, 31, 52, 0.08);
   --shadow-floating: 0 16px 40px rgba(22, 31, 52, 0.14);
 
-  /* Motion */
+  /* Motion — Elevated Civic choreography layer.
+     Fast = state feedback, standard = ordinary transitions,
+     emphasized = entrances and scroll reveals. CSS feedback uses a
+     smooth ease-out curve; physical springs remain JS-only. */
   --duration-fast: 150ms;
   --duration-standard: 200ms;
+  --duration-emphasized: 480ms;
   --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* Layering */
   --z-base: 1;
@@ -115,15 +125,19 @@
   --color-success: #6FD79A;
   --color-success-text: #6FD79A;
   --color-success-surface: #10301F;
+  --color-success-border: rgba(111, 215, 154, 0.45);
   --color-warning: #F2B663;
   --color-warning-text: #F2B663;
   --color-warning-surface: #33260F;
+  --color-warning-border: rgba(242, 182, 99, 0.45);
   --color-error: #FF9A90;
   --color-error-text: #FF9A90;
   --color-error-surface: #3A1714;
+  --color-error-border: rgba(255, 154, 144, 0.45);
   --color-info: #9CB3FF;
   --color-info-text: #9CB3FF;
   --color-info-surface: #17223D;
+  --color-info-border: rgba(156, 179, 255, 0.45);
 
   --color-diff-insert: rgba(111, 215, 154, 0.16);
   --color-diff-remove: rgba(255, 154, 144, 0.16);
@@ -139,6 +153,7 @@
 
 html {
   background: var(--color-canvas);
+  scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -314,6 +329,51 @@ textarea::placeholder,
 @keyframes state-fade {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+/* ── Elevated Civic motion utilities ───────────────────── */
+/* CSS fallbacks for entrances; primary choreography runs
+   through `lib/motion.ts` presets and honors reduced motion
+   via <MotionConfig reducedMotion="user">. */
+
+/* Token-driven texture for the landing hero visual field. */
+.texture-dotgrid {
+  background-image: radial-gradient(var(--color-hairline) 1.5px, transparent 1.5px);
+  background-size: 22px 22px;
+}
+
+.animate-rise-in {
+  animation: rise-in var(--duration-emphasized) var(--ease-decelerate) both;
+}
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Success feedback: a check mark drawing itself. Pair with an SVG
+   path using pathLength normalization. */
+.check-draw path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw-stroke var(--duration-emphasized) var(--ease-decelerate) forwards;
+}
+@keyframes draw-stroke {
+  to { stroke-dashoffset: 0; }
+}
+
+/* ── Dialog entrances (Radix drives data-state) ────────── */
+.dialog-overlay[data-state='open'] {
+  animation: state-fade var(--duration-fast) var(--ease-out) both;
+}
+
+.dialog-content[data-state='open'] {
+  animation: dialog-in var(--duration-standard) var(--ease-decelerate) both;
+}
+/* The centered dialog keeps its Tailwind centering translate while
+   the entrance adds rise + settle scale on top of it. */
+@keyframes dialog-in {
+  from { opacity: 0; transform: translate(-50%, -48%) scale(0.985); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
 /* ── Monaco editor theming ─────────────────────────────── */

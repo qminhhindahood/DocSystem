@@ -42,9 +42,13 @@ describe('shared UI primitives', () => {
 
     // Pill is reserved for badges, search, and filter chips.
     expect(screen.getByRole('button', { name: 'Tiếp tục' })).toHaveClass('rounded-control');
-    expect(screen.getByRole('button', { name: 'Tiếp tục' })).toHaveClass('min-h-10');
+    expect(screen.getByRole('button', { name: 'Tiếp tục' })).toHaveClass('min-h-11');
     expect(screen.getByRole('button', { name: 'Đóng' })).toHaveClass('rounded-control');
-    expect(screen.getByRole('button', { name: 'Đóng hộp thoại' })).toHaveClass('rounded-compact');
+    expect(screen.getByRole('button', { name: 'Đóng hộp thoại' })).toHaveClass(
+      'rounded-compact',
+      'min-h-11',
+      'min-w-11',
+    );
   });
 
   it('keeps a destructive button readable in both themes', () => {

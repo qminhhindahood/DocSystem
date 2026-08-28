@@ -1,7 +1,7 @@
 ---
-version: 2.0
+version: 3.0
 name: Rounded Civic Workspace
-description: The implementation contract for the DocAI frontend. A quiet neutral canvas, a persistent navigation rail, and one large rounded workspace holding the current task. Be Vietnam Pro throughout, calm blue action color, soft geometry with disciplined hierarchy. Light mode default, dark mode structurally identical.
+description: The implementation contract for the DocAI frontend. A quiet neutral canvas, a persistent navigation rail, and one large rounded workspace holding the current task. Be Vietnam Pro throughout, calm blue action color, soft geometry with disciplined hierarchy. Light mode default, dark mode structurally identical. Version 3 adds the Elevated Civic motion layer — choreographed entrances, scroll reveals, and spring feedback that make the product feel alive without breaking civic calm.
 ---
 
 # DocAI — Design System
@@ -49,6 +49,15 @@ technical identifiers and machine-oriented values. Both load through
 | Control | `text-control` | 14px / 20px | 500 | Buttons, navigation, filters, table headers |
 | Metadata | `text-metadata` | 13px / 18px | 400 | Dates, counts, helper text |
 | Technical | `text-technical` | 12px / 16px | 500 | IDs and dense machine values only |
+
+Landing display ramp — public marketing surfaces only, never inside the authenticated
+workspace. Fluid sizes scale between the listed bounds across the viewport range.
+
+| Role | Tailwind utility | Size | Weight | Usage |
+|---|---|---|---|---|
+| Display hero | `text-display-hero` | 40–60px, line 1.15 | 700 | Landing H1 only |
+| Display large | `text-display-lg` | 32–44px, line 1.18 | 700 | Major landing section openers |
+| Display medium | `text-display-md` | 26–34px, line 1.22 | 700 | Secondary landing openers |
 
 Rules:
 
@@ -105,16 +114,47 @@ specification: that value measures 3.97:1 on white and fails the specification's
 requirement. `#646D80` is the lightest value in the same hue that clears 4.5:1 on
 canvas, workspace, subtle, and strong surfaces. `test/contrast.test.ts` enforces this.
 
-## Elevation and motion
+## Elevation
 
 - Workspace shadow: `0 18px 50px rgba(22, 31, 52, 0.08)` in light mode; none in dark.
 - Floating popover and dialog shadow: `0 16px 40px rgba(22, 31, 52, 0.14)`.
 - Ordinary panels, rows, buttons, and fields are flat. `shadow-raised` and
   `shadow-flat` resolve to `none` and exist only for in-progress migration.
 - No glows, blurred decorative backgrounds, animated orbs, or hover translation.
-- State transitions run 150–220ms ease-out.
-- Loading indicators may rotate. Under reduced motion, nonessential animation and
-  continuous pulsing stop while progress text and state changes stay visible.
+
+## Motion (Elevated Civic)
+
+Motion explains state changes; it never decorates. Every animation must answer
+"what changed, and where did it go?" Presets live in `lib/motion.ts`; components
+must not hand-roll new variant objects before promoting them there.
+
+Tokens:
+
+| Token | Value | Usage |
+|---|---|---|
+| `--duration-fast` | 150ms | State feedback: hover, color, focus |
+| `--duration-standard` | 200ms | Ordinary transitions: drawer slide, accordion |
+| `--duration-emphasized` | 480ms | Entrances and scroll reveals |
+| `--ease-out` | `cubic-bezier(0.22, 0.61, 0.36, 1)` | Default easing |
+| `--ease-decelerate` | `cubic-bezier(0.05, 0.7, 0.1, 1)` | Entrances arrive fast, settle softly |
+| `--ease-spring` | `cubic-bezier(0.22, 1, 0.36, 1)` | Smooth CSS feedback curve; physical JS springs come from `lib/motion.ts` |
+
+Choreography rules:
+
+- Entrances rise 12–18px while fading in, staggered 60–140ms per item, completing
+  within roughly 600ms of a section entering view.
+- Exits leave faster than entrances (≤200ms); nothing lingers on the way out.
+- Interactive layout changes — active navigation pill, press states, toggles,
+  toast stacking — use springs (`springSnappy`, `springSoft`).
+- Scroll reveals fire once per visit. Animated copy stays in the accessibility
+  tree in every state, and Vietnamese diacritics must never clip at rest inside
+  line-mask reveals.
+- Progress communicates honestly: bars fill with real values; indeterminate work
+  rotates or pulses subtly.
+- Loading indicators may rotate. Under reduced motion,
+  `<MotionConfig reducedMotion="user">` collapses transform/layout animation to
+  instant state changes, continuous pulsing stops, and progress text and state
+  changes stay visible.
 
 ## Layout
 
@@ -154,9 +194,9 @@ width; prose and forms keep readable maximums; editor routes may split panes.
 
 The **Document Confidence Strip** is the product-specific signature: a compact,
 conditional trust summary near document review and export surfaces. It shows only real
-values — template name, source count, generation state, fidelity result, validation
-result, last check — and renders nothing when no trustworthy values exist. It never
-labels an unavailable validation as passed.
+values — conversion confidence, source coverage, demoted-content count, and fidelity
+warnings — and renders nothing when no trustworthy values exist. It never labels an
+unavailable check as passed.
 
 ## Accessibility contract
 
@@ -170,7 +210,8 @@ labels an unavailable validation as passed.
 ## Enforcement
 
 - `test/design-system.test.ts` — source-level checks on fonts, tokens, the type ramp,
-  and absence of legacy decorative APIs, tiny UI text, and raw shadow values.
+  the display ramp, the motion token layer, the global reduced-motion gate, and
+  absence of legacy decorative APIs, tiny UI text, and raw shadow values.
 - `test/contrast.test.ts` — computed AA contrast for light and dark token pairs.
 
 A change is consistent with this system when both suites pass, no new raw color,
@@ -180,7 +221,7 @@ Vietnamese unless it is a technical identifier.
 ## Known gaps
 
 - No sort contract exists for documents; sorting controls must not be added.
-- Template fidelity guarantees are shown only where the implementation substantiates them.
+- Conversion fidelity guarantees are shown only where the implementation substantiates them.
 - Deprecated Tailwind aliases (`rounded-card`, `rounded-dialog`, `shadow-raised`,
   `shadow-flat`, `canvas-subtle`, `surface-raised`, `text-heading-2`, `text-caption`)
   remain only until route migration finishes, then are removed in Task 12.

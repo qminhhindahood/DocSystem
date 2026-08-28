@@ -78,9 +78,6 @@ this.state = 'open';
 }
 }
 
-export const lmStudioBreaker = new CircuitBreaker({ threshold: 5, resetTimeoutMs: 30_000 });
-export const doclingBreaker = new CircuitBreaker({ threshold: 3, resetTimeoutMs: 60_000 });
-export const embeddingsBreaker = new CircuitBreaker({ threshold: 3, resetTimeoutMs: 60_000 });
 export const conversionBreaker = new CircuitBreaker({
   threshold: 3,
   resetTimeoutMs: 60_000,

@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import fakeredis
 
 import config
-from job_store import JobStore
+from job_store import JobStore, RedisUnavailableError
 
 
 def _store_with_fake() -> JobStore:
@@ -72,3 +72,67 @@ def test_reclaim_processing_requeues_leftover_payloads():
     # Re-queued payloads are intact and consumable.
     job = store.dequeue(timeout=1)
     assert job is not None and job["jobId"] in ("j3", "j4")
+
+
+def test_strict_store_raises_instead_of_falling_back_on_read(monkeypatch):
+    fake = fakeredis.FakeRedis(decode_responses=True)
+    store = JobStore(redis_client=fake, strict_redis=True)
+
+    def fail_read(_key):
+        raise ConnectionError("redis offline")
+
+    monkeypatch.setattr(fake, "get", fail_read)
+
+    try:
+        store.load("strict-read")
+    except RedisUnavailableError as error:
+        assert "load" in str(error)
+    else:
+        raise AssertionError("strict Redis read unexpectedly fell back")
+    assert store.redis_client is fake
+
+
+def test_strict_store_raises_for_queue_and_terminal_cleanup(monkeypatch):
+    fake = fakeredis.FakeRedis(decode_responses=True)
+    store = JobStore(redis_client=fake, strict_redis=True)
+
+    def fail_dequeue(*_args, **_kwargs):
+        raise ConnectionError("redis offline")
+
+    monkeypatch.setattr(fake, "brpoplpush", fail_dequeue)
+    try:
+        store.dequeue(timeout=1)
+    except RedisUnavailableError as error:
+        assert "dequeue" in str(error)
+    else:
+        raise AssertionError("strict dequeue unexpectedly returned None")
+
+    monkeypatch.setattr(fake, "lrem", fail_dequeue)
+    try:
+        store.finish_processing({"jobId": "strict-cleanup"})
+    except RedisUnavailableError as error:
+        assert "finish processing" in str(error)
+    else:
+        raise AssertionError("strict terminal cleanup unexpectedly succeeded")
+
+
+def test_api_store_reconnects_once_before_using_memory_fallback(monkeypatch):
+    broken = fakeredis.FakeRedis(decode_responses=True)
+    healthy = fakeredis.FakeRedis(decode_responses=True)
+    key = f"{config.JOB_STATE_PREFIX}reconnected"
+    healthy.set(key, json.dumps({"jobId": "reconnected"}))
+    attempts = []
+
+    def fail_read(_key):
+        raise ConnectionError("stale connection")
+
+    def reconnect(_url):
+        attempts.append("connect")
+        return healthy
+
+    monkeypatch.setattr(broken, "get", fail_read)
+    store = JobStore(redis_client=broken, redis_factory=reconnect)
+
+    assert store.load("reconnected") == {"jobId": "reconnected"}
+    assert attempts == ["connect"]
+    assert store.redis_client is healthy

@@ -20,10 +20,10 @@ from render.docx_builder import DocxBlockBuilder
 from rules.rule_engine import RuleEngine
 from schema.blocks import Block, blocks_to_dicts, parse_blocks
 from schema.validator import validate_chunk
-from structuring.admin_zones import build_admin_header, build_signature
+from structuring.admin_zones import ZoneBuildResult, build_admin_header, build_signature
 from structuring.classifier import Classifier, LineInfo
 from structuring.tables import DetectedTable, extract_accepted_tables
-from structuring.zones import extract_lines, partition_zones
+from structuring.zones import PageZones, extract_lines, partition_zones
 from triage.triage import DIGITAL_TEXT, SCANNED, TABLE_HEAVY, triage_page
 
 logger = logging.getLogger(__name__)
@@ -87,6 +87,7 @@ def _extract_text_page_lines(page, page_number: int) -> list[LineInfo]:
                 text=text, size=size, bold=bold, italic=italic,
                 centered=centered, indented=indented,
                 page=page_number, y=y0, y1=y1, x0=x0, x1=x1,
+                page_width=page.rect.width, page_height=page.rect.height,
             ))
     lines.sort(key=lambda l: l.y)
     return lines
@@ -184,6 +185,27 @@ def _line_in_table(line: LineInfo, table: DetectedTable) -> bool:
     return x0 <= x <= x1 and y0 <= y <= y1
 
 
+def restore_unconsumed_zones(
+    zones: PageZones,
+    header: Optional[ZoneBuildResult],
+    signature: Optional[ZoneBuildResult],
+) -> list[LineInfo]:
+    """Return body plus every zone line not represented by a recognized block."""
+    consumed = set(header.consumed_line_ids if header else ())
+    consumed.update(signature.consumed_line_ids if signature else ())
+    restored = [
+        line
+        for line in [*zones.header, *zones.body, *zones.signature]
+        if id(line) not in consumed
+    ]
+    restored.sort(key=lambda line: (
+        getattr(line, "page", zones.page),
+        getattr(line, "y", getattr(line, "y0", 0.0)),
+        getattr(line, "x0", 0.0),
+    ))
+    return restored
+
+
 def _structure_body_with_tables(
     classifier: Classifier,
     body_lines: list[LineInfo],
@@ -248,18 +270,25 @@ def convert_pdf(pdf_path: str, out_path: str,
                 # Page-1 header zone -> AdminHeaderBlock (Quốc hiệu, tiêu ngữ,
                 # cơ quan ban hành, số/KH, địa danh - ngày). Previously these
                 # mandatory Decree-30 components were silently discarded.
+                header_result = None
                 if page_no == 1:
-                    hdr = build_admin_header(zones.header, page_no, page.rect.width)
-                    if hdr is not None:
-                        all_blocks.append(hdr)
+                    header_result = build_admin_header(
+                        zones.header, page_no, page.rect.width
+                    )
+                    if header_result.block is not None:
+                        all_blocks.append(header_result.block)
                 # Signature zone -> SignatureBlock (Nơi nhận + chữ ký), kept
                 # for the LAST page that carries one (multi-page docs sign at
                 # the end; earlier bottom zones are usually footers).
-                sig = build_signature(zones.signature, page_no, page.rect.width)
-                if sig is not None:
-                    sig_candidates[page_no] = sig
+                signature_result = build_signature(
+                    zones.signature, page_no, page.rect.width
+                )
+                if signature_result.block is not None:
+                    sig_candidates[page_no] = signature_result.block
                 # body lines through the 4-stage cascade
-                blocks = classifier.structure(zones.body)
+                blocks = classifier.structure(restore_unconsumed_zones(
+                    zones, header_result, signature_result
+                ))
                 for b in blocks:
                     if getattr(b, "page", None) is None:
                         b.page = page_no
@@ -269,16 +298,24 @@ def convert_pdf(pdf_path: str, out_path: str,
                 lines = _extract_text_page_lines(page, page_no)
                 report.extracted_chars += sum(len(l.text) for l in lines)
                 zones = partition_zones(lines, page_no, page.rect.width, page.rect.height)
+                header_result = None
                 if page_no == 1:
-                    hdr = build_admin_header(zones.header, page_no, page.rect.width)
-                    if hdr is not None:
-                        all_blocks.append(hdr)
-                sig = build_signature(zones.signature, page_no, page.rect.width)
-                if sig is not None:
-                    sig_candidates[page_no] = sig
+                    header_result = build_admin_header(
+                        zones.header, page_no, page.rect.width
+                    )
+                    if header_result.block is not None:
+                        all_blocks.append(header_result.block)
+                signature_result = build_signature(
+                    zones.signature, page_no, page.rect.width
+                )
+                if signature_result.block is not None:
+                    sig_candidates[page_no] = signature_result.block
                 tables, rejected_tables = extract_accepted_tables(page, page_no)
                 blocks = _structure_body_with_tables(
-                    classifier, zones.body, tables, page_no
+                    classifier,
+                    restore_unconsumed_zones(zones, header_result, signature_result),
+                    tables,
+                    page_no,
                 )
                 all_blocks.extend(blocks)
                 if rejected_tables:

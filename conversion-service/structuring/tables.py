@@ -71,7 +71,30 @@ def _rows(table: Any) -> list[list[TableCell]]:
     return result
 
 
-def _to_block(table: Any, page_number: int) -> TableBlock:
+def _normalized_bbox(
+    bbox: PdfBBox,
+    page_width: float,
+    page_height: float,
+) -> list[int] | None:
+    if page_width <= 0 or page_height <= 0:
+        return None
+    x0, y0, x1, y1 = bbox
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return [
+        max(0, min(999, round(1000 * x0 / page_width))),
+        max(0, min(999, round(1000 * y0 / page_height))),
+        max(1, min(1000, round(1000 * x1 / page_width))),
+        max(1, min(1000, round(1000 * y1 / page_height))),
+    ]
+
+
+def _to_block(
+    table: Any,
+    page_number: int,
+    page_width: float,
+    page_height: float,
+) -> TableBlock:
     rows = _rows(table)
     header = getattr(table, "header", None)
     header_names = [_text(value) for value in getattr(header, "names", [])]
@@ -91,6 +114,11 @@ def _to_block(table: Any, page_number: int) -> TableBlock:
         rows=body_rows,
         confidence=0.92,
         page=page_number,
+        bbox=_normalized_bbox(
+            tuple(float(value) for value in table.bbox),
+            page_width,
+            page_height,
+        ),
     )
 
 
@@ -103,6 +131,14 @@ def extract_accepted_tables(page: Any, page_number: int) -> tuple[list[DetectedT
             rejected += 1
             continue
         bbox = tuple(float(value) for value in table.bbox)
-        accepted.append(DetectedTable(block=_to_block(table, page_number), bbox=bbox))
+        accepted.append(DetectedTable(
+            block=_to_block(
+                table,
+                page_number,
+                float(page.rect.width),
+                float(page.rect.height),
+            ),
+            bbox=bbox,
+        ))
     accepted.sort(key=lambda item: (item.bbox[1], item.bbox[0]))
     return accepted, rejected

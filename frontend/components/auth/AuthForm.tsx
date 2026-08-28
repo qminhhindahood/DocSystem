@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { motion } from 'motion/react';
 import { useAuth } from './AuthProvider';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -13,10 +14,16 @@ import { TurnstileWidget } from './TurnstileWidget';
 interface AuthFormProps {
   mode: 'login' | 'signup';
   passwordResetEnabled?: boolean;
+  publicRegistrationEnabled?: boolean;
   turnstileSiteKey?: string;
 }
 
-export function AuthForm({ mode, passwordResetEnabled = true, turnstileSiteKey }: AuthFormProps) {
+export function AuthForm({
+  mode,
+  passwordResetEnabled = true,
+  publicRegistrationEnabled = true,
+  turnstileSiteKey,
+}: AuthFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const auth = useAuth();
@@ -126,7 +133,16 @@ export function AuthForm({ mode, passwordResetEnabled = true, turnstileSiteKey }
         </p>
       </div>
 
-      {error && <InlineAlert variant="error">{error}</InlineAlert>}
+      {error && (
+        <motion.div
+          key={error}
+          initial={{ x: 0 }}
+          animate={{ x: [0, -6, 6, -4, 4, 0] }}
+          transition={{ duration: 0.36, ease: 'easeOut' }}
+        >
+          <InlineAlert variant="error">{error}</InlineAlert>
+        </motion.div>
+      )}
 
       <Input
         label="Tên đăng nhập"
@@ -181,7 +197,7 @@ export function AuthForm({ mode, passwordResetEnabled = true, turnstileSiteKey }
             placeholder="Nhập lại mật khẩu"
             disabled={pending}
           />
-          <div className="rounded-control border border-warning/30 bg-warning/10 p-3 text-metadata text-text-secondary">
+          <div className="rounded-control border border-warning-border bg-warning-surface p-3 text-metadata text-text-secondary">
             Email chưa được xác minh và hiện không thể khôi phục mật khẩu. Hãy lưu mật khẩu ở nơi an toàn.
           </div>
           {turnstileSiteKey ? (
@@ -202,23 +218,25 @@ export function AuthForm({ mode, passwordResetEnabled = true, turnstileSiteKey }
         {submitLabel}
       </Button>
 
-      <p className="text-center text-metadata text-text-secondary">
-        {isLogin ? (
+      {(!isLogin || publicRegistrationEnabled) && (
+        <p className="text-center text-metadata text-text-secondary">
+          {isLogin ? (
           <>
             Chưa có tài khoản?{' '}
             <a href="/signup" className="font-medium text-action hover:underline">
               Tạo tài khoản
             </a>
           </>
-        ) : (
+          ) : (
           <>
             Đã có tài khoản?{' '}
             <a href="/login" className="font-medium text-action hover:underline">
               Đăng nhập
             </a>
           </>
-        )}
-      </p>
+          )}
+        </p>
+      )}
     </form>
   );
 }

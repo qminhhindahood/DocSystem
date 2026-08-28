@@ -11,6 +11,7 @@ describe('Next security configuration', () => {
     if (!rule) throw new Error('Expected a global header rule');
     const headers = new Map(rule.headers.map((header: { key: string; value: string }) => [header.key, header.value]));
     expect(headers.get('Content-Security-Policy')).toContain("worker-src 'self' blob:");
+    expect(headers.get('Content-Security-Policy')).toContain("frame-src 'self' blob:");
     expect(headers.get('Content-Security-Policy')).toContain("frame-ancestors 'none'");
     expect(headers.get('X-Frame-Options')).toBe('DENY');
     expect(headers.get('X-Content-Type-Options')).toBe('nosniff');

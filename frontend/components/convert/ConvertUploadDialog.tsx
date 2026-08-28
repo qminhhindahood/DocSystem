@@ -2,10 +2,12 @@
 
 import React, { useState, useRef, useCallback } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import { AnimatePresence, motion } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { ApiError, AuthError, submitConversion, submitBulkConversion } from '@/lib/convert-api';
 import { OPEN_LLM_SETTINGS_EVENT } from '@/components/settings/LLMSettingsDialog';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { springSnappy, listItem } from '@/lib/motion';
 import { Upload, X, FileText } from 'lucide-react';
 
 export interface SubmittedJob {
@@ -124,21 +126,21 @@ export function ConvertUploadDialog({ open, onOpenChange, onSubmitted }: Convert
   return (
     <Dialog.Root open={open} onOpenChange={(v) => { if (!uploading) { reset(); onOpenChange(v); } }}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-backdrop bg-black/55" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-modal max-h-[85vh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-panel bg-surface-strong p-0 shadow-floating outline-none">
+        <Dialog.Overlay className="dialog-overlay fixed inset-0 z-backdrop bg-black/55" />
+        <Dialog.Content className="dialog-content fixed left-1/2 top-1/2 z-modal max-h-[85vh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-panel bg-surface-strong p-0 shadow-floating outline-none">
           <div className="flex items-center justify-between px-6 py-4 border-b border-hairline">
             <Dialog.Title className="text-section-title text-text-primary">
               Chuyển đổi PDF sang Word
             </Dialog.Title>
             <Dialog.Close asChild>
-              <button className="rounded-control p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary" aria-label="Đóng">
+              <button className="flex h-11 w-11 items-center justify-center rounded-control text-text-secondary hover:bg-surface hover:text-text-primary" aria-label="Đóng">
                 <X className="h-4 w-4" />
               </button>
             </Dialog.Close>
           </div>
 
           <div className="px-6 py-5 space-y-4">
-            <div
+            <motion.div
               role="button"
               tabIndex={0}
               onClick={() => fileInputRef.current?.click()}
@@ -146,22 +148,35 @@ export function ConvertUploadDialog({ open, onOpenChange, onSubmitted }: Convert
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
+              animate={{ scale: dragOver ? 1.012 : 1 }}
+              transition={springSnappy}
               className={
-                'flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-panel border-2 border-dashed p-6 text-center transition-colors ' +
-                (dragOver ? 'border-action bg-action/5' : 'border-hairline hover:border-action/50')
+                'flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-panel border-2 border-dashed p-6 text-center transition-colors duration-fast ' +
+                (dragOver ? 'border-action bg-action-tint' : 'border-hairline hover:border-border-strong')
               }
             >
               <Upload className="h-6 w-6 text-text-secondary" aria-hidden="true" />
-              {files.length > 0 ? (
+              {files.length > 0 && (
                 <ul className="flex max-h-28 w-full flex-col gap-1 overflow-y-auto text-left">
-                  {files.map((f) => (
-                    <li key={`${f.name}-${f.size}`} className="flex items-center gap-2 text-control text-text-primary">
-                      <FileText className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-                      <span className="truncate">{f.name}</span>
-                    </li>
-                  ))}
+                  <AnimatePresence initial={false}>
+                    {files.map((f) => (
+                      <motion.li
+                        key={`${f.name}-${f.size}`}
+                        layout
+                        variants={listItem}
+                        initial="hidden"
+                        animate="visible"
+                        exit="exit"
+                        className="flex items-center gap-2 rounded-control bg-surface px-2 py-1 text-control text-text-primary"
+                      >
+                        <FileText className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                        <span className="truncate">{f.name}</span>
+                      </motion.li>
+                    ))}
+                  </AnimatePresence>
                 </ul>
-              ) : (
+              )}
+              {files.length === 0 && (
                 <>
                   <span className="text-control font-medium text-text-primary">Kéo thả tệp PDF vào đây</span>
                   <span className="text-body text-text-secondary">hoặc bấm để chọn tệp (tối đa {MAX_FILES} tệp, 50 MB/tệp)</span>
@@ -175,10 +190,10 @@ export function ConvertUploadDialog({ open, onOpenChange, onSubmitted }: Convert
                 className="hidden"
                 onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = ''; }}
               />
-            </div>
+            </motion.div>
 
             {error && (
-              <div role="alert" className="whitespace-pre-line rounded-control bg-danger/10 px-3 py-2 text-body text-danger">
+              <div role="alert" className="whitespace-pre-line rounded-control bg-error-surface px-3 py-2 text-body text-error">
                 <p>{error}</p>
                 {needsVisionConfig && (
                   <Button

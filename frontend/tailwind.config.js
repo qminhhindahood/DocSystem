@@ -42,12 +42,16 @@ module.exports = {
         selection: 'var(--color-selection)',
         success: 'var(--color-success)',
         'success-surface': 'var(--color-success-surface)',
+        'success-border': 'var(--color-success-border)',
         warning: 'var(--color-warning)',
         'warning-surface': 'var(--color-warning-surface)',
+        'warning-border': 'var(--color-warning-border)',
         error: 'var(--color-error)',
         'error-surface': 'var(--color-error-surface)',
+        'error-border': 'var(--color-error-border)',
         info: 'var(--color-info)',
         'info-surface': 'var(--color-info-surface)',
+        'info-border': 'var(--color-info-border)',
       },
       borderRadius: {
         workspace: 'var(--radius-workspace)',
@@ -71,13 +75,29 @@ module.exports = {
         'control': ['14px', { lineHeight: '20px', fontWeight: '500' }],
         'metadata': ['13px', { lineHeight: '18px', fontWeight: '400' }],
         'technical': ['12px', { lineHeight: '16px', fontWeight: '500' }],
+        // Landing display ramp (Elevated Civic): hero and section openers only.
+        'display-hero': [
+          'clamp(2.5rem, 1rem + 5vw, 3.75rem)',
+          { lineHeight: '1.15', fontWeight: '700' },
+        ],
+        'display-lg': [
+          'clamp(2rem, 0.875rem + 3.6vw, 2.75rem)',
+          { lineHeight: '1.18', fontWeight: '700' },
+        ],
+        'display-md': [
+          'clamp(1.625rem, 1rem + 2vw, 2.125rem)',
+          { lineHeight: '1.22', fontWeight: '700' },
+        ],
       },
       transitionDuration: {
         fast: 'var(--duration-fast)',
         standard: 'var(--duration-standard)',
+        emphasized: 'var(--duration-emphasized)',
       },
       transitionTimingFunction: {
         product: 'var(--ease-out)',
+        decelerate: 'var(--ease-decelerate)',
+        spring: 'var(--ease-spring)',
       },
       zIndex: {
         base: 'var(--z-base)',

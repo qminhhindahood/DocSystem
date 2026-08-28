@@ -32,7 +32,10 @@ jobs:
       - run: npm run check-schema
       - run: npm run test:migrations
       - run: npm run build
-      - run: npm audit --omit=dev --audit-level=moderate
+      - name: Audit backend production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit backend development dependencies
+        run: npm audit --audit-level=high
 
   frontend:
     runs-on: ubuntu-latest
@@ -50,7 +53,10 @@ jobs:
       - run: npm test -- --run --maxWorkers=4
       - run: npm run lint
       - run: npm run build
-      - run: npm audit --omit=dev --audit-level=moderate
+      - name: Audit frontend production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit frontend development dependencies
+        run: npm audit --audit-level=high
 
   conversion:
     runs-on: ubuntu-latest
@@ -67,6 +73,10 @@ jobs:
       - run: pip install -r requirements.txt -r requirements-dev.txt
       - run: python -m pytest tests -q
       - run: python -m compileall -q .
+      - name: Verify typography sync
+        run: python scripts/check_typography_sync.py
+      - name: Run release render preflight
+        run: python eval/verify_p0a.py
 
   containers:
     runs-on: ubuntu-latest
@@ -100,6 +110,12 @@ jobs:
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: 'false'
           exit-code: '1'
+      # Container contract: the conversion image must not ship work files,
+      # the virtualenv, caches, or other non-runtime content.
+      - name: Conversion image content contract
+        if: matrix.service == 'conversion'
+        shell: pwsh
+        run: ./ops/test-conversion-image.ps1 -Image 'local/docai-conversion:${{ github.sha }}'
 
   repository-contracts:
     runs-on: ubuntu-latest

@@ -56,6 +56,8 @@ class LineInfo:
     y1: float = 0.0
     x0: float = 0.0
     x1: float = 0.0
+    page_width: float = 0.0
+    page_height: float = 0.0
 
     @property
     def cy(self) -> float:
@@ -245,6 +247,7 @@ class Classifier:
                     ordered=True, marker=marker, items=items,
                     confidence=min(p.confidence for p in pending_points),
                     page=pending_points[0].line.page,
+                    bbox=_union_bbox([p.line for p in pending_points]),
                 ))
                 pending_points.clear()
 
@@ -329,27 +332,55 @@ class Classifier:
         text = c.line.text.strip()
         page = c.line.page
         conf = c.confidence
+        bbox = _line_bbox(c.line)
 
         if c.kind == "point":
             return None  # accumulated into a ListBlock
         if c.kind in ("title",):
             return HeadingBlock(level=1, text=text, align="center",
-                                confidence=conf, page=page)
+                                confidence=conf, page=page, bbox=bbox)
         if c.kind in ("article", "chapter", "section", "part", "heading", "annex"):
             level = {"article": 2, "chapter": 3, "section": 3,
                      "part": 3, "heading": 2, "annex": 2}[c.kind]
             align = "center" if c.kind in ("chapter", "annex", "part") else "left"
             return HeadingBlock(level=level, text=text, align=align,
-                                confidence=conf, page=page)
+                                confidence=conf, page=page, bbox=bbox)
         if c.kind in ("clause", "list_item"):
             return ParagraphBlock(text=text, align="justify",
-                                  confidence=conf, page=page)
+                                  confidence=conf, page=page, bbox=bbox)
         if c.kind in ("preamble_kw", "operative_kw"):
             return ParagraphBlock(text=text, align="justify",
-                                  confidence=conf, page=page)
+                                  confidence=conf, page=page, bbox=bbox)
         if c.kind == "closing_kw":
             return ParagraphBlock(text=text, align="left",
-                                  confidence=conf, page=page)
+                                  confidence=conf, page=page, bbox=bbox)
         # paragraph
         return ParagraphBlock(text=text, align="justify",
-                              confidence=conf, page=page)
+                              confidence=conf, page=page, bbox=bbox)
+
+
+def _line_bbox(line: LineInfo) -> Optional[list[int]]:
+    if (
+        line.page_width <= 0
+        or line.page_height <= 0
+        or line.x1 <= line.x0
+        or line.y1 <= line.y
+    ):
+        return None
+    x0 = max(0, min(999, round(1000 * line.x0 / line.page_width)))
+    y0 = max(0, min(999, round(1000 * line.y / line.page_height)))
+    x1 = max(x0 + 1, min(1000, round(1000 * line.x1 / line.page_width)))
+    y1 = max(y0 + 1, min(1000, round(1000 * line.y1 / line.page_height)))
+    return [x0, y0, x1, y1]
+
+
+def _union_bbox(lines: list[LineInfo]) -> Optional[list[int]]:
+    boxes = [box for line in lines if (box := _line_bbox(line)) is not None]
+    if not boxes:
+        return None
+    return [
+        min(box[0] for box in boxes),
+        min(box[1] for box in boxes),
+        max(box[2] for box in boxes),
+        max(box[3] for box in boxes),
+    ]

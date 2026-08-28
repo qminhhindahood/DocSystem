@@ -188,6 +188,51 @@ describe('rounded civic workspace design contract', () => {
     expect(source).not.toMatch(englishOnly);
   });
 
+  it('defines the Elevated Civic motion token layer', () => {
+    const css = readProjectFile('app/globals.css');
+
+    expect(css).toContain('--duration-fast: 150ms');
+    expect(css).toContain('--duration-standard: 200ms');
+    expect(css).toContain('--duration-emphasized: 480ms');
+    expect(css).toContain('--ease-out: cubic-bezier(0.22, 0.61, 0.36, 1)');
+    expect(css).toContain('--ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1)');
+    expect(css).toContain('--ease-spring: cubic-bezier(0.22, 1, 0.36, 1)');
+  });
+
+  it('maps the emphasized duration and spring easings into Tailwind', () => {
+    const config = readProjectFile('tailwind.config.js');
+
+    expect(config).toContain("emphasized: 'var(--duration-emphasized)'");
+    expect(config).toContain("decelerate: 'var(--ease-decelerate)'");
+    expect(config).toContain("spring: 'var(--ease-spring)'");
+  });
+
+  it('defines the landing display ramp', () => {
+    const config = readProjectFile('tailwind.config.js');
+
+    expect(config).toContain("'display-hero'");
+    expect(config).toContain("'display-lg'");
+    expect(config).toContain("'display-md'");
+  });
+
+  it('keeps shared choreography presets in one library', () => {
+    const presets = readProjectFile('lib/motion.ts');
+
+    expect(presets).toContain("from 'motion/react'");
+    expect(presets).toContain('export const springSnappy');
+    expect(presets).toContain('export const springSoft');
+    expect(presets).toContain('export const fadeRise');
+    expect(presets).toContain('export const maskLine');
+  });
+
+  it('gates every animation behind the user reduced-motion preference', () => {
+    const provider = readProjectFile('components/providers/MotionProvider.tsx');
+    const layout = readProjectFile('app/layout.tsx');
+
+    expect(provider).toContain('reducedMotion="user"');
+    expect(layout).toContain('MotionProvider');
+  });
+
   it('keeps the design contract document aligned with the approved specification', () => {
     const design = readProjectFile('DESIGN.md');
 

@@ -127,7 +127,8 @@ the new backend port.
 
 - `main.py` — FastAPI: `/convert` (single), `/convert/bulk` (≤10), `/convert/{id}/report`, `/metrics`, `/health`
 - `worker.py` — Redis `conversion_queue` consumer (BRPOPLPUSH + startup reclaim), writes job state + metrics
-- `job_store.py` — job state in Redis with TTL (86400s), memory fallback
+- `job_store.py` — TTL-bound Redis job state; strict worker semantics with a
+  bounded in-process API fallback for local development
 - `quota.py` — per-user daily cap
 - `metrics.py` — Prometheus counters; worker → Redis aggregation → `/metrics`
 - `pipeline.py` — `convert_pdf`: triage → rules engine (never LLM) → DOCX
@@ -140,13 +141,13 @@ the new backend port.
 cd conversion-service
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
-.venv\Scripts\python.exe -m pytest          # 128 tests
+.venv\Scripts\python.exe -m pytest          # 152 tests
 
 cd ..\backend
-npm install && npm test                     # 246 tests
+npm install && npm test                     # 272 tests
 
 cd ..\frontend
-npm install && npm test                     # 202 tests
+npm install && npm test                     # 229 tests
 ```
 
 Fixture seals are generated artifacts (gitignored). Regenerate before running

@@ -40,6 +40,14 @@ describe('AuthLayout', () => {
     expect(screen.getAllByRole('main')).toHaveLength(1);
     expect(screen.getByRole('main')).toHaveTextContent('Biểu mẫu đăng nhập');
   });
+
+  it('describes only the PDF-to-DOCX conversion product', () => {
+    render(<AuthLayout><p>Biểu mẫu đăng nhập</p></AuthLayout>);
+
+    expect(screen.getByText('Chuyển đổi PDF thành DOCX có thể kiểm tra.')).toBeInTheDocument();
+    expect(screen.getByText(/độ tin cậy và độ bao phủ/i)).toBeInTheDocument();
+    expect(screen.queryByText(/soạn thảo|dự thảo|tra cứu căn cứ/i)).not.toBeInTheDocument();
+  });
 });
 
 describe('AuthForm — login', () => {
@@ -152,6 +160,13 @@ describe('AuthForm — login', () => {
   it('shows link to signup', () => {
     render(<AuthForm mode="login" />);
     expect(screen.getByRole('link', { name: 'Tạo tài khoản' })).toHaveAttribute('href', '/signup');
+  });
+
+  it('hides signup navigation when public registration is disabled', () => {
+    render(<AuthForm mode="login" publicRegistrationEnabled={false} />);
+
+    expect(screen.queryByRole('link', { name: 'Tạo tài khoản' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Chưa có tài khoản?')).not.toBeInTheDocument();
   });
 
   it('places password recovery after the password field and before submit', () => {

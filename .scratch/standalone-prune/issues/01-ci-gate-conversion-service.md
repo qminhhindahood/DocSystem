@@ -4,9 +4,9 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] CI gains a conversion job that installs the service's runtime and dev requirements and runs its pytest suite
-- [ ] The containers matrix gains a conversion entry built from the service's Dockerfile with the correct build context
-- [ ] The conversion image is scanned by the existing SHA-pinned Trivy action with the same CRITICAL,HIGH severity gate and failing exit code
-- [ ] The CI workflow still passes end-to-end (yaml valid, no job references a removed path)
+- [x] CI gains a conversion job that installs the service's runtime and dev requirements and runs its pytest suite
+- [x] The containers matrix gains a conversion entry built from the service's Dockerfile with the correct build context
+- [x] The conversion image is scanned by the existing SHA-pinned Trivy action with the same CRITICAL,HIGH severity gate and failing exit code
+- [x] The CI workflow still passes end-to-end (yaml valid, no job references a removed path)

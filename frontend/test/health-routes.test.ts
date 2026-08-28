@@ -9,7 +9,11 @@ import { GET as live } from '@/app/api/live/route';
 import { GET as ready } from '@/app/api/ready/route';
 
 describe('frontend health routes', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('PASSWORD_RESET_MODE', 'disabled');
+    vi.stubEnv('DISABLE_PUBLIC_REGISTER', 'true');
+  });
 
   it('reports process liveness without calling the backend', async () => {
     const response = await live();
@@ -36,5 +40,26 @@ describe('frontend health routes', () => {
     expect(response.status).toBe(503);
     expect(body).toEqual({ status: 'not_ready' });
     expect(JSON.stringify(body)).not.toMatch(/database|private|secret|http:/);
+  });
+
+  it('rejects readiness when public registration lacks a Turnstile site key', async () => {
+    vi.stubEnv('DISABLE_PUBLIC_REGISTER', 'false');
+    vi.stubEnv('TURNSTILE_SITE_KEY', '');
+    forwardToBackend.mockResolvedValue(new Response('{}', { status: 200 }));
+
+    const response = await ready();
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ status: 'not_ready' });
+    expect(forwardToBackend).not.toHaveBeenCalled();
+  });
+
+  it('rejects readiness when password reset mode is invalid', async () => {
+    vi.stubEnv('PASSWORD_RESET_MODE', 'smtp-later');
+
+    const response = await ready();
+
+    expect(response.status).toBe(503);
+    expect(forwardToBackend).not.toHaveBeenCalled();
   });
 });

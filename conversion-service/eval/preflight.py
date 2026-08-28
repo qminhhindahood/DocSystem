@@ -6,7 +6,7 @@ Checks (each PASS/WARN/FAIL):
   1. Service /health reachable, queue mode as expected
   2. Redis reachable (queue mode) — WARN if in-memory fallback
   3. Typography JSON loads and matches schema expectations
-  4. TS ROLE_RULES sync (scripts/check_typography_sync.py logic)
+  4. Typography sync guard (scripts/check_typography_sync.py)
   5. Work/output/media dirs writable
   6. Quota config sane (limit > 0)
   7. Failure-rate alert not currently firing
@@ -78,7 +78,7 @@ def check_typography() -> None:
         record("typography JSON", FAIL, str(e))
 
 
-def check_ts_sync() -> None:
+def check_typography_sync() -> None:
     import subprocess
 
     script = SERVICE_ROOT / "scripts" / "check_typography_sync.py"
@@ -86,9 +86,9 @@ def check_ts_sync() -> None:
         [sys.executable, str(script)], capture_output=True, text=True, timeout=60
     )
     if proc.returncode == 0:
-        record("TS ROLE_RULES sync", PASS)
+        record("typography sync", PASS)
     else:
-        record("TS ROLE_RULES sync", FAIL, (proc.stdout + proc.stderr).strip()[-200:])
+        record("typography sync", FAIL, (proc.stdout + proc.stderr).strip()[-200:])
 
 
 def check_dirs() -> None:
@@ -135,7 +135,7 @@ def main() -> int:
     check_health(args.url)
     check_redis()
     check_typography()
-    check_ts_sync()
+    check_typography_sync()
     check_dirs()
     check_quota()
     check_alerts(args.url)

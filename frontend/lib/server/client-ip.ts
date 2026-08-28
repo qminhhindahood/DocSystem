@@ -14,6 +14,6 @@ export function deriveClientIp(request: NextRequest): string | undefined {
     .split(',')
     .map(value => value.trim())
     .filter(Boolean);
-  const candidate = chain[chain.length - hops - 1] ?? chain[0];
+  const candidate = chain[chain.length - hops];
   return candidate && isIP(candidate) ? candidate : undefined;
 }

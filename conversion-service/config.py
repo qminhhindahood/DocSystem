@@ -18,6 +18,7 @@ WORK_DIR = Path(os.environ.get("CONVERSION_WORK_DIR", SERVICE_DIR / "work"))
 UPLOAD_DIR = WORK_DIR / "uploads"
 OUTPUT_DIR = WORK_DIR / "outputs"
 MEDIA_DIR = WORK_DIR / "media"
+REFUND_DIR = WORK_DIR / "refunds"
 
 # ─── Service ──────────────────────────────────────────────────────────────────
 SERVICE_NAME = "conversion-service"
@@ -89,5 +90,5 @@ EVAL_HALLUCINATION_MAX = 0.0
 
 
 def ensure_dirs() -> None:
-    for d in (UPLOAD_DIR, OUTPUT_DIR, MEDIA_DIR):
+    for d in (UPLOAD_DIR, OUTPUT_DIR, MEDIA_DIR, REFUND_DIR):
         d.mkdir(parents=True, exist_ok=True)

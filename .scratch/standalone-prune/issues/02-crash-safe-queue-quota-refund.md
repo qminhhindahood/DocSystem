@@ -4,12 +4,12 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Dequeue atomically moves the job payload from the queue list to a processing list
-- [ ] Terminal job states remove the payload from the processing list
-- [ ] Worker startup reclaims (re-queues) every payload left in the processing list
-- [ ] The job store exposes a public read-only Redis client property; no module reaches into the private attribute
-- [ ] Quota service gains a refund operation; the worker refunds on failed conversion; a job refunds at most once; the counter never goes below zero
-- [ ] Durability and refund semantics are tested against a fake Redis client (fakeredis added to dev dependencies)
-- [ ] The full conversion-service pytest suite passes
+- [x] Dequeue atomically moves the job payload from the queue list to a processing list
+- [x] Terminal job states remove the payload from the processing list
+- [x] Worker startup reclaims (re-queues) every payload left in the processing list
+- [x] The job store exposes a public read-only Redis client property; no module reaches into the private attribute
+- [x] Quota service gains a refund operation; the worker refunds on failed conversion; a job refunds at most once; the counter never goes below zero
+- [x] Durability and refund semantics are tested against a fake Redis client (fakeredis added to dev dependencies)
+- [x] The full conversion-service pytest suite passes

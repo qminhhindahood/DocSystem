@@ -9,11 +9,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Service code
+# Service code — runtime inputs only. The root .dockerignore keeps the
+# repo-root context clean; these explicit copies guarantee that tests/,
+# eval/, scripts/, .venv and work/ never ship even if the context drifts.
 COPY conversion-service/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY conversion-service/ /app/
+COPY conversion-service/*.py /app/
+COPY conversion-service/assembly/ /app/assembly/
+COPY conversion-service/ingest/ /app/ingest/
+COPY conversion-service/render/ /app/render/
+COPY conversion-service/rules/ /app/rules/
+COPY conversion-service/schema/ /app/schema/
+COPY conversion-service/structuring/ /app/structuring/
+COPY conversion-service/triage/ /app/triage/
+COPY conversion-service/vision/ /app/vision/
 # Canonical typography source (single source of truth, plan §8)
 COPY shared/ /shared/
 
