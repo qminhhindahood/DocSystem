@@ -217,10 +217,52 @@ the flags after deploy: `Set-Cookie` on the login response must show
 4. `https://app.<domain>/api/proxy/health` returns the backend health JSON
    (proves the runtime `BACKEND_API_URL` read through the proxy).
 
-## 8. Monitoring
+## 8. Monitoring (ticket 08)
 
-Deferred until the pilot owner provides Telegram/email alert materials — see
-`.scratch/production-readiness/issues/08-cutover-gate-and-monitoring.md`.
-Until wired, check the two alert conditions manually on the VM:
-`conversion_failure_rate > 0.2` and queue depth growing for >10 min
-(`curl -s localhost:8004/metrics | grep conversion_queue_depth`).
+Deferred wiring until the pilot owner provides the materials — the exact
+setup, ready to execute:
+
+### 8.1 Materials needed (user-provided)
+
+- Telegram bot token (create via @BotFather)
+- Telegram chat ID (message the bot once, then
+  `curl "https://api.telegram.org/bot<token>/getUpdates"` to read it)
+- Alert email address
+
+### 8.2 Uptime probe (free tier)
+
+1. UptimeRobot → Add New Monitor → HTTP(s):
+   URL `https://api.<domain>/api/health`, interval 5 min.
+2. Repeat for `https://app.<domain>` (frontend) — 3 monitors total with
+   the conversion service.
+3. Alert contact: the Telegram bot via UptimeRobot's Telegram integration
+   + the alert email.
+
+### 8.3 Metric alerts (Grafana Cloud free tier)
+
+1. Grafana Cloud → Connections → Prometheus → add a scrape job targeting
+   `https://api.<domain>/metrics` — but the conversion service binds to
+   the compose network only. Simplest free-tier path: run a tiny
+   Prometheus on the VM (one more compose service scraping
+   `conversion:8004/metrics`) OR expose /metrics through Caddy on a
+   secret path and scrape from Grafana Cloud. Prefer the VM Prometheus:
+   `prom/prometheus` container, 30s scrape, 15-day retention fits the
+   free tier disk.
+2. Alert rules (PromQL, in the Prometheus container config):
+   - `conversion_jobs_failed_total / conversion_jobs_total > 0.2`
+     over the last 50 jobs → Telegram + email
+   - `increase(conversion_queue_depth[10m]) > 0` sustained (queue
+     growing, worker stalled) → Telegram + email
+3. Wire alert delivery: Alertmanager → Telegram bot webhook
+   (`https://api.telegram.org/bot<token>/sendMessage`) + SMTP email.
+
+### 8.4 Until the materials arrive (manual checks, daily)
+
+```bash
+# On the VM — both must be clean:
+curl -s https://api.<domain>/api/health            # "alerts":[]
+curl -s localhost:8004/metrics | grep conversion_queue_depth   # 0 or shrinking
+```
+
+The cutover checklist §4 marks these as the standing manual checks until
+the Telegram/email wiring replaces them.
