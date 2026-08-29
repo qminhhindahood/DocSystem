@@ -1,6 +1,6 @@
 # 03 — Admin password-reset script (one-shot container run)
 
-Status: open
+Status: resolved
 Blocked by: (none)
 
 ## Why

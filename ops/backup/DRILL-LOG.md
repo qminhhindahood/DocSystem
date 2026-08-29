@@ -19,3 +19,15 @@ Format: date, dump used, row counts, result, findings (runbook §3).
 - Dev host: Docker Desktop file-sharing allowlist broken (bind mounts
   unavailable), so the drill ran entirely with named volumes + `docker cp`
   — same mechanism production will use.
+
+## 2026-08-29 — admin password-reset drill (ticket 03 acceptance, dev host)
+
+- Scratch `postgres:15-alpine` on a docker network + the real
+  `standalone/backend:latest` image running `dist/scripts/reset_operator_password.js`
+  with `RESET_USERNAME`/`RESET_PASSWORD`/`DATABASE_URL` env (the exact runbook §5
+  command shape). Seeded user `pilot_user` (bcrypt cost 10).
+- Results: no-env run **refuses** (exit 1, no secrets echoed); real run
+  **succeeds** — `Operator password reset completed for user drill-u1.`;
+  `sessionVersion` 0 → 1 (all prior JWTs invalid); bcrypt proof:
+  old password `false`, new password `true`; stored hash cost 12 (harder than
+  the seed's 10). **PASS**.
