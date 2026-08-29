@@ -81,6 +81,25 @@ QUOTA_REFUND_RETRY_DELAY_S = max(
     0.1, float(os.environ.get("CONVERSION_QUOTA_REFUND_RETRY_DELAY_S", "1"))
 )
 
+# ─── Quota (P3, plan §8; ticket 01) ────────────────────────────────────────────
+# Daily docs/user. Pilot policy is 50 (grill Q6/Q11). Invalid or non-positive
+# values fail fast at import — a typo must never silently shrink or zero the
+# quota guard that caps a user's BYOK Gemini spend and system load.
+def _daily_quota_limit() -> int:
+    raw = os.environ.get("QUOTA_DAILY_LIMIT", "50")
+    try:
+        value = int(raw)
+    except ValueError:
+        raise RuntimeError(
+            f"QUOTA_DAILY_LIMIT must be an integer, got {raw!r}"
+        ) from None
+    if value <= 0:
+        raise RuntimeError(f"QUOTA_DAILY_LIMIT must be > 0, got {value}")
+    return value
+
+
+DAILY_QUOTA_LIMIT = _daily_quota_limit()
+
 # ─── Eval targets (plan §12) ──────────────────────────────────────────────────
 EVAL_CER_DIGITAL_MAX = 0.02
 EVAL_CER_SCANNED_MAX = 0.05

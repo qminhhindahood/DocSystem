@@ -13,7 +13,9 @@ from redis.exceptions import WatchError
 
 import config
 
-DEFAULT_DAILY_LIMIT = 20  # docs/day per user
+# Docs/day per user — env-configurable via QUOTA_DAILY_LIMIT (config fails
+# fast on invalid values); tests override with the explicit `limit=` arg.
+DEFAULT_DAILY_LIMIT = config.DAILY_QUOTA_LIMIT
 
 
 @dataclass(frozen=True)

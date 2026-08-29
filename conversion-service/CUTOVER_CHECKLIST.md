@@ -27,7 +27,7 @@ Run `python eval/preflight.py --url http://<host>:8004` first; it must report
 - [ ] Bulk upload (2+ files) → one job per file, per-file errors surfaced
 - [ ] Open "Xem kết quả kiểm tra độ tin cậy" on a finished job → report panel
       renders confidence, demotions, flagged blocks
-- [ ] Quota: exceed `DEFAULT_DAILY_LIMIT` (20/day) for one user → 429 with
+- [ ] Quota: exceed `QUOTA_DAILY_LIMIT` (default 50/day) for one user → 429 with
       friendly message; other users unaffected
 
 ## 3. Observability

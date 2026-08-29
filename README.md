@@ -31,7 +31,7 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
 
 - **Queue mode**: conversion service enqueues jobs when Redis is reachable; the
   worker consumes them. FastAPI deduplicates nothing — the worker owns all jobs.
-- **Daily quota**: 20 docs/user/day (config `DEFAULT_DAILY_LIMIT`), charged only
+- **Daily quota**: `QUOTA_DAILY_LIMIT` (default 50 docs/user/day), charged only
   after PDF validation passes.
 - **BYOK scanned-page vision**: the server holds no Gemini key. Each user stores
   their own Google Gemini key in the settings dialog (gear icon in the sidebar);
