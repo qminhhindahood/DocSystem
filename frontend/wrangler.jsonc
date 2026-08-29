@@ -1,0 +1,22 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"main": ".open-next/worker.js",
+	"name": "ai-docs-frontend",
+	"compatibility_date": "2026-08-01",
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"services": [
+		{
+			// Self-reference service binding (revalidate paths patch). The app
+			// currently uses no revalidate/ISR, but the adapter patches that
+			// code path — keep the binding so it stays functional if added.
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "ai-docs-frontend"
+		}
+	]
+	// BACKEND_API_URL is a runtime variable set in the Cloudflare dashboard
+	// (Production + Preview): https://api.<domain> — never baked here.
+}

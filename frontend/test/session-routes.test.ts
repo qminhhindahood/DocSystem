@@ -5,6 +5,7 @@ import { normalizeReturnTo } from '@/lib/server/session';
 const mockForwardToBackend = vi.fn();
 vi.mock('@/lib/server/backend', () => ({
   forwardToBackend: (...args: unknown[]) => mockForwardToBackend(...args),
+  backendUrl: () => 'http://backend.test',
 }));
 
 import { POST as signup } from '@/app/api/session/signup/route';

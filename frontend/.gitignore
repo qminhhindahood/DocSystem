@@ -20,6 +20,11 @@ yarn-error.log*
 # misc tooling caches
 /.impeccable
 /.vercel
+
+# opennextjs-cloudflare build artifacts (ticket 07)
+/.open-next/
+/.wrangler/
+.dev.vars*
 *.tsbuildinfo
 next-env.d.ts
 

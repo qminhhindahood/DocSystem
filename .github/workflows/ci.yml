@@ -53,6 +53,8 @@ jobs:
       - run: npm test -- --run --maxWorkers=4
       - run: npm run lint
       - run: npm run build
+      - name: Build Cloudflare worker (OpenNext adapter, ticket 07)
+        run: npx opennextjs-cloudflare build
       - name: Audit frontend production dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: Audit frontend development dependencies

@@ -165,9 +165,57 @@ only changed services; `docker compose up -d` never drops volumes.
 4. DB rollback: migrations are forward-only (ADR-0001); restore from the
    nightly dump (§3) only as a last resort.
 
-## 7. Frontend (Cloudflare Pages)
+## 7. Frontend (Cloudflare, ticket 07)
 
-Filled by ticket 07.
+The frontend is a Cloudflare Worker built with `@opennextjs/cloudflare`
+(hybrid platform — ADR-0002). Cloudflare's git integration builds on every
+push to the production branch.
+
+### 7.1 One-time setup
+
+1. Cloudflare dashboard → Workers & Pages → **Connect to Git** → pick the
+   repo, production branch = `codex/complete-remediation` (or your main).
+2. Build settings: framework preset **Next.js**, build command
+   `npx opennextjs-cloudflare build`, root directory `frontend`.
+3. Set the runtime variable in **Settings → Variables and Secrets** for
+   BOTH Production and Preview:
+   `BACKEND_API_URL=https://api.<domain>` (the Caddy edge from §6 — TLS).
+   Never bake it in `wrangler.jsonc` (vars block) — the proxy reads it at
+   request time, and the value differs between preview and production.
+4. Custom domain: add `app.<domain>` (the domain already lives on
+   Cloudflare — DNS is automatic). Wait for cert issuance.
+5. Backend CORS: the VM `.env` already sets
+   `CORS_ORIGIN=https://app.<domain>` (ticket 06 overlay guard).
+
+### 7.2 Deploy
+
+Push to the production branch — the git integration builds and deploys.
+Manual path (local preview first):
+
+```bash
+cd frontend
+npm run build:worker        # typecheck + next build + adapter bundle
+npx wrangler dev            # local workerd preview on :8788
+npx opennextjs-cloudflare deploy   # or wrangler deploy
+```
+
+### 7.3 Session cookie notes
+
+The session cookie is set by the frontend's own `/api/session/*` routes
+(frontend origin, `docai_session`) and the proxy forwards it as a Bearer
+header to the backend — no cross-domain cookie is involved. In production
+the backend sets `SESSION_COOKIE_SECURE=true` (ticket 06 overlay). Verify
+the flags after deploy: `Set-Cookie` on the login response must show
+`Secure`, `HttpOnly`, `SameSite=Lax`.
+
+### 7.4 Verification after deploy
+
+1. `https://app.<domain>` loads (landing page, no console errors).
+2. Login works; the browser cookie carries `Secure; HttpOnly; SameSite=Lax`.
+3. Upload a >4.5MB PDF through the convert UI — it must succeed (proves
+   the request body rides the Worker's ~100MB limit, not a 4.5MB one).
+4. `https://app.<domain>/api/proxy/health` returns the backend health JSON
+   (proves the runtime `BACKEND_API_URL` read through the proxy).
 
 ## 8. Monitoring
 
