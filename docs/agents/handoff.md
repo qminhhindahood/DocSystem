@@ -2,6 +2,57 @@
 
 Latest state first. Each entry: what changed, how verified, where it lives.
 
+## 2026-08-29 — Tickets 02–06 resolved (production-readiness run, one session)
+
+Five tickets, TDD throughout, committed individually on
+`codex/complete-remediation`:
+
+- **02 (`55a3903`) Nightly Postgres backup + restore drill**:
+  `ops/backup/postgres-dump.sh` (pg_dump -Fc, 30-day retention, 1 KiB size
+  guard, set -euo pipefail) + `sync-to-gcs.sh` (gcloud rsync, never
+  deletes); runbook §1–§4; restore drill PROVEN end-to-end (real
+  postgres:15-alpine container, 2 users + 1 BYOK config restored,
+  counts match — logged in ops/backup/DRILL-LOG.md). Drill found the
+  pwsh `>` binary-corruption trap (documented, in-container paths only).
+- **03 (`6cb25bd`) Admin password reset**: reset_operator_password.ts
+  pre-existed fully tested; ticket reduced to an end-to-end container
+  drill from the real backend image (old password false/new true,
+  sessionVersion 0→1 invalidating JWTs, refuses disabled/ambiguous).
+- **04 (`873bcb9`) Lossless TCVN3/VNI decode**:
+  `conversion-service/legacy/decode.py` — tables cross-validated
+  against TWO independent published sources (73/73 single-byte
+  agreement); decode_best guards: health-gain + byte-identical
+  round-trip (keeps healthy Unicode out despite Latin-1 overlap) +
+  composite-pair discriminator (VNI vs TCVN3). triage LEGACY_TEXT
+  class; pipeline decodes per line (geometry preserved); main.py
+  admission gate admits legacy PDFs without Gemini key. Fixtures are
+  GENERATED from the tables (hand-typing mojibake failed twice).
+  Known limit: mixed legacy+Unicode pages fall back to SCANNED
+  (honest tier-3). Real-corpus certification still open.
+- **05 (`b82c0df`) Per-job fidelity ledger**: `fidelity.py` — bag
+  (multiset) fidelity on case-folded whitespace-collapsed text; probe
+  showed ordered CER false-alarms at 0.69 on VERBATIM docs (reordering
+  + Decree-30 uppercase), bag scores 1.0 exactly. Surfaces in
+  /convert/:id/report as fidelityLedger with capped divergence spans +
+  stated normalization. Scanned jobs: ledger None (no fake numbers).
+  Drift <0.99 increments existing failure counters (worker + sync).
+- **06 (`92a686c`) VM deployment composition**:
+  docker-compose.prod.yml (caddy:2-alpine 80/443, backend hardened
+  SESSION_COOKIE_SECURE/TRUST_PROXY_HOPS=1/CORS_ORIGIN :? guard,
+  frontend behind never-activated "cloudflare-only" profile) +
+  Caddyfile (route{request_body 64MB; reverse_proxy backend:3001}) —
+  empirically validated against the real caddy image ("Valid
+  configuration"; caught the request_body-needs-route and
+  empty-API_DOMAIN-label traps). Runbook §6 (setup/first-boot/deploy/
+  rollback). 15 Pester checks; ops directory 57/57.
+- **Verified**: pytest 202/202, jest 278/278, vitest 229/229, Pester
+  57/57, merged compose config validates, whitespace clean, no secrets
+  in the diff (drill scratch values + detector patterns only).
+- **Remaining**: tickets 07 (Cloudflare Pages/OpenNext frontend) and
+  08 (cutover gate + monitoring) are OPEN and untouched — the user
+  scoped this run "until ticket 6". Legacy real-corpus eval (20–50
+  PDFs) awaits user materials.
+
 ## 2026-08-29 — Ticket 01 resolved: QUOTA_DAILY_LIMIT env var (production-readiness)
 
 - **What**: Daily quota env-configurable. `conversion-service/config.py`
