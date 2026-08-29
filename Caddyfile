@@ -1,0 +1,28 @@
+# Caddy edge for the conversion service VM (ticket 06, ADR-0002).
+#
+# TLS terminates here (automatic ACME via the domain's DNS, which already
+# points at this VM). Caddy sets X-Forwarded-For/X-Forwarded-Proto by
+# default; the backend trusts exactly ONE proxy hop (TRUST_PROXY_HOPS=1).
+#
+# api.<domain> comes from the VM .env via the API_DOMAIN variable.
+# Credentials all live in the VM .env — never in this file.
+#
+# API_DOMAIN MUST be set (runbook §6.1): if it expands to an empty site
+# label, Caddy parses this whole block as GLOBAL OPTIONS and fails loudly
+# at startup — which is the safe direction (no silent wrong proxying).
+
+{$API_DOMAIN} {
+	# Uploads: PDF sources up to ~50MB must pass. The backend also enforces
+	# its own limit; this is the edge cap (>= backend limit).
+	route {
+		request_body {
+			max_size 64MB
+		}
+		reverse_proxy backend:3001
+	}
+
+	header {
+		# No server fingerprint.
+		-Server
+	}
+}

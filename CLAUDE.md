@@ -206,7 +206,18 @@ PASSWORD_RESET_MODE=email
 DISABLE_PUBLIC_REGISTER=false
 ALLOW_STACK_TRACES=false
 PRISMA_LOG_QUERIES=false
+SESSION_COOKIE_SECURE=false   # true only behind TLS (prod overlay sets it)
 ```
+
+### Production-only (VM .env — docker-compose.prod.yml overlay)
+```
+CORS_ORIGIN=https://app.<domain>   # Cloudflare Pages origin (required, :? guard)
+API_DOMAIN=api.<domain>             # Caddy site label (required — empty label
+                                   # breaks Caddy config parsing)
+```
+Ticket 06 (ADR-0002): prod composition = `docker-compose.yml` +
+`docker-compose.prod.yml` (caddy edge, hardened backend, frontend disabled —
+Cloudflare Pages serves it). No credentials in the overlay or Caddyfile.
 
 ### Frontend (.env.local)
 ```
