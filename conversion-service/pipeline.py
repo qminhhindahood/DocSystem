@@ -24,7 +24,8 @@ from structuring.admin_zones import ZoneBuildResult, build_admin_header, build_s
 from structuring.classifier import Classifier, LineInfo
 from structuring.tables import DetectedTable, extract_accepted_tables
 from structuring.zones import PageZones, extract_lines, partition_zones
-from triage.triage import DIGITAL_TEXT, SCANNED, TABLE_HEAVY, triage_page
+from legacy.decode import decode_best, decode_tcvn3, decode_vni
+from triage.triage import DIGITAL_TEXT, LEGACY_TEXT, SCANNED, TABLE_HEAVY, triage_page
 
 logger = logging.getLogger(__name__)
 
@@ -324,6 +325,45 @@ def convert_pdf(pdf_path: str, out_path: str,
                         f"Trang {page_no}: {rejected_tables} bảng không đạt ngưỡng "
                         "chất lượng; đã dùng văn bản dự phòng."
                     )
+            elif ptype == LEGACY_TEXT:
+                # TCVN3/VNI bytes without ToUnicode CMap (ticket 04). The
+                # standard tables decode them losslessly — OCR never is.
+                # Decode per line so geometry (positions, sizes) is kept and
+                # zone partitioning works on healthy text; decode_best picks
+                # the encoding that re-encodes byte-identically (lossless
+                # proof). Fallback if per-line decoding can't reproduce the
+                # page: treat as scanned (honest degradation, never fake
+                # digital).
+                page_text = page.get_text()
+                best = decode_best(page_text)
+                if best is None:
+                    scanned_pages.append(page_no)
+                    continue
+                decoder = decode_tcvn3 if best.encoding == "TCVN3" else decode_vni
+                lines = _extract_text_page_lines(page, page_no)
+                for line in lines:
+                    line.text = decoder(line.text).text
+                report.extracted_chars += sum(len(l.text) for l in lines)
+                zones = partition_zones(lines, page_no, page.rect.width, page.rect.height)
+                header_result = None
+                if page_no == 1:
+                    header_result = build_admin_header(
+                        zones.header, page_no, page.rect.width
+                    )
+                    if header_result.block is not None:
+                        all_blocks.append(header_result.block)
+                signature_result = build_signature(
+                    zones.signature, page_no, page.rect.width
+                )
+                if signature_result.block is not None:
+                    sig_candidates[page_no] = signature_result.block
+                blocks = classifier.structure(restore_unconsumed_zones(
+                    zones, header_result, signature_result
+                ))
+                for b in blocks:
+                    if getattr(b, "page", None) is None:
+                        b.page = page_no
+                all_blocks.extend(blocks)
             else:  # SCANNED
                 # Gemini vision contract (P1). Collected here, transcribed in
                 # one batched pass after the loop when the user injected a

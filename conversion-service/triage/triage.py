@@ -8,11 +8,13 @@ combines signals exactly as specified in the plan.
 from __future__ import annotations
 
 import config
+from legacy.decode import decode_best
 
 # Page classes
 SCANNED = "SCANNED"
 TABLE_HEAVY = "TABLE_HEAVY"
 DIGITAL_TEXT = "DIGITAL_TEXT"
+LEGACY_TEXT = "LEGACY_TEXT"  # TCVN3/VNI bytes, decodable through tables
 
 VIET_DIACRITICS = set(
     "àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩị"
@@ -61,13 +63,24 @@ def triage_page(page) -> str:
     if has_fullpage_scan_image(page) and len(text) < config.SCANNED_TEXT_SLIVER_CHARS:
         return SCANNED
 
-    # 3. Corrupted encoding / bad OCR (Vietnamese vowel ratio, known-word check) -> scanned
+    # 3. Corrupted encoding / bad OCR (Vietnamese vowel ratio, known-word check).
+    #    Legacy TCVN3/VNI bytes decode losslessly through the standard tables
+    #    (OCR never is); decodable pages take the table path, the rest -> scanned.
     if is_corrupted_encoding_or_bad_ocr(text):
+        if decode_best(text) is not None:
+            return LEGACY_TEXT
         return SCANNED
 
     # 4. Table grid lines / vector geometry present -> table-heavy
     if len(page.find_tables().tables) > 0:
         return TABLE_HEAVY
+
+    # 5. High-byte legacy mojibake can clear the diacritic-ratio floor (é/ß/Ö
+    #    count as diacritics); the health-gain + round-trip decode check still
+    #    catches it. Healthy Unicode never gains health by decoding, so this
+    #    fires only on genuinely decodable legacy text.
+    if decode_best(text) is not None:
+        return LEGACY_TEXT
 
     return DIGITAL_TEXT
 

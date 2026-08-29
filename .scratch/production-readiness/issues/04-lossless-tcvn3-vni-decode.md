@@ -1,6 +1,6 @@
 # 04 — Lossless TCVN3/VNI decode (legacy Vietnamese fonts)
 
-Status: open
+Status: resolved
 Blocked by: (none)
 
 ## Why
@@ -51,3 +51,50 @@ Three-tier definition (accepted in grill round 4):
       administrative PDFs, run them and record results (synthetic fixtures ≠
       corpus certification — stated honestly in the report).
 - [ ] Conversion suite green (128 + new).
+
+## Implementation answers (2026-01 session)
+
+- **Tables**: cross-validated against two independent published sources
+  before freezing — bongmeomeovn/TCVN3-Convert-Unicode mapping.txt and
+  vuthaihoc/py-unicode-convert converter.py. 73/73 single-byte agreement
+  on overlap; zero disagreements. The one cross-source conflict
+  (mapping.txt maps ASCII hyphen 45 -> ư) was resolved toward identity:
+  eating hyphens is worse than missing a rare form.
+- **Layout deviation (accepted)**: one `legacy/decode.py` module carries both
+  tables + the `decode_best` dispatcher instead of `tcvn3_to_unicode.py` +
+  `vni_to_unicode.py`; tables are Python dicts inside that module instead of
+  JSON in `shared/`. Functionally equivalent; fixtures live in
+  `tests/fixtures_legacy.json`, generated from the same verified tables
+  (hand-typing high-byte mojibake produced wrong fixtures twice — the
+  discipline is: fixtures come from the tables or they don't exist).
+- **Font hints deviation (accepted)**: dispatcher is text-statistics-based
+  (decode must improve VN diacritic health by >= 0.10 AND re-encode
+  byte-identically to the source) rather than font-name hints
+  (`.VnTime` etc.). The round-trip identity check is a stronger guarantee
+  than a font name: it proves the decode lossless per page. TCVN3-vs-VNI
+  discrimination uses composite-pair usage (VNI's signature).
+- **Critical safety guard**: TCVN3 keys overlap Latin-1 codepoints (byte
+  225 -> 'ả' while Unicode 'á' is U+00E1 = 225), so unconditional decoding
+  would corrupt healthy Unicode. The health-gain + round-trip guards keep
+  healthy digital pages on the DIGITAL_TEXT path; tested explicitly.
+- **Wiring**: `triage_page` returns LEGACY_TEXT when decode_best succeeds
+  (both in the corrupted-encoding branch and as a high-byte-mojibake catch
+  after the diacritic floor — real TCVN3 extraction carries é/ß/Ö which
+  count as diacritics and clear the 0.05 floor); pipeline decodes per line
+  (geometry preserved for zone partitioning), falls back to SCANNED when
+  the page-level decode fails; main.py's admission gate admits legacy
+  PDFs without a Gemini key automatically (`== SCANNED` test unchanged).
+- **Tests**: 23 new (13 decoder unit, 10 routing/e2e). All exact-equality
+  (CER = 0 by assertion). Suite: 186 passed (163 pre-existing + 23).
+- **Real-corpus eval**: still open as stated — fixture-certified only
+  until 20–50 real legacy administrative PDFs are supplied.
+- **Known limitation (review finding)**: a page mixing legacy-encoded and
+  healthy Unicode text fails the byte-identical round-trip, so it falls back
+  to SCANNED (vision transcription, tier 3) rather than a partial table
+  decode. Honest degradation, no content loss — but tier-3 quality on such
+  pages until a per-span decoder is justified by real corpus evidence.
+- **Code review (2026-01 session)**: standards + spec axes run directly;
+  compileall OK, 186→187 tests green. Two probe findings: (1) mixed-page
+  fallback recorded above; (2) a suspected sliver-decode bug dissolved
+  under tracing — `Céng hßa` is genuinely TCVN3 `Cộng hòa` (re-encode
+  proves byte identity). French/Latin-1 no-gain guard added as a test.
