@@ -1,6 +1,6 @@
 # 02 — Postgres backup + restore drill
 
-Status: open
+Status: resolved
 Blocked by: (none)
 
 ## Why
