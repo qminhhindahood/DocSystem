@@ -1,6 +1,6 @@
 # 01 — Quota becomes env-configurable (QUOTA_DAILY_LIMIT, default 50)
 
-Status: claimed
+Status: resolved
 Blocked by: (none)
 
 ## Why
