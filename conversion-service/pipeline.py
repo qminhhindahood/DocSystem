@@ -25,6 +25,7 @@ from structuring.classifier import Classifier, LineInfo
 from structuring.tables import DetectedTable, extract_accepted_tables
 from structuring.zones import PageZones, extract_lines, partition_zones
 from legacy.decode import decode_best, decode_tcvn3, decode_vni
+from fidelity import ledger_for_docx
 from triage.triage import DIGITAL_TEXT, LEGACY_TEXT, SCANNED, TABLE_HEAVY, triage_page
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ class ConversionReport:
     extracted_chars: int = 0                                    # text-layer chars seen
     output_chars: int = 0                                       # content chars emitted
     coverage: float = 0.0                                       # output/extracted ratio
+    fidelity_ledger: Optional[dict] = None                       # tier-1 verbatim ledger (ticket 05)
 
 
 def _extract_text_page_lines(page, page_number: int) -> list[LineInfo]:
@@ -255,6 +257,10 @@ def convert_pdf(pdf_path: str, out_path: str,
         sig_candidates: dict[int, Block] = {}
         scanned_pages: list[int] = []
         classifier = Classifier()
+        # Tier-1 fidelity ledger inputs (ticket 05): extracted text of
+        # text-bearing pages (decoded text for LEGACY_TEXT). Scanned pages
+        # are excluded by design — they carry no source text to compare.
+        ledger_text_parts: list[str] = []
 
         # 2. Triage + 3. Extract/Structure (per page)
         for idx in range(len(doc)):
@@ -267,6 +273,7 @@ def convert_pdf(pdf_path: str, out_path: str,
             if ptype == DIGITAL_TEXT:
                 lines = _extract_text_page_lines(page, page_no)
                 report.extracted_chars += sum(len(l.text) for l in lines)
+                ledger_text_parts.extend(l.text for l in lines)
                 zones = partition_zones(lines, page_no, page.rect.width, page.rect.height)
                 # Page-1 header zone -> AdminHeaderBlock (Quốc hiệu, tiêu ngữ,
                 # cơ quan ban hành, số/KH, địa danh - ngày). Previously these
@@ -298,6 +305,7 @@ def convert_pdf(pdf_path: str, out_path: str,
                 # Primary: find_tables (free). Quality gate -> text fallback.
                 lines = _extract_text_page_lines(page, page_no)
                 report.extracted_chars += sum(len(l.text) for l in lines)
+                ledger_text_parts.extend(l.text for l in lines)
                 zones = partition_zones(lines, page_no, page.rect.width, page.rect.height)
                 header_result = None
                 if page_no == 1:
@@ -344,6 +352,7 @@ def convert_pdf(pdf_path: str, out_path: str,
                 for line in lines:
                     line.text = decoder(line.text).text
                 report.extracted_chars += sum(len(l.text) for l in lines)
+                ledger_text_parts.extend(l.text for l in lines)
                 zones = partition_zones(lines, page_no, page.rect.width, page.rect.height)
                 header_result = None
                 if page_no == 1:
@@ -416,6 +425,20 @@ def convert_pdf(pdf_path: str, out_path: str,
         # extracted. Empty output on a non-empty text layer is a hard failure,
         # not a perfect score.
         report.output_chars = _content_chars(all_blocks)
+        # Tier-1 fidelity ledger (ticket 05): verbatim guarantee on the
+        # text paths (DIGITAL_TEXT + TABLE_HEAVY + LEGACY_TEXT); scanned
+        # pages excluded (no source text) — a scanned-only job reports no
+        # fidelity number, only confidence.
+        if ledger_text_parts:
+            led = ledger_for_docx(" ".join(ledger_text_parts), out_path)
+            report.fidelity_ledger = led.to_payload()
+            if led.fidelity < config.FIDELITY_DRIFT_THRESHOLD and report.status != "failed":
+                report.status = "completed_with_warnings"
+                report.warnings.append(
+                    f"Độ nguyên văn nội dung là {led.fidelity:.1%}, thấp hơn "
+                    f"ngưỡng {config.FIDELITY_DRIFT_THRESHOLD:.0%} — xem phiếu "
+                    "so sánh ký tự trong báo cáo."
+                )
         if report.extracted_chars > 0:
             report.coverage = min(1.0, report.output_chars / report.extracted_chars)
         elif report.output_chars > 0:

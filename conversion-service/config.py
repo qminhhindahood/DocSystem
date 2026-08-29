@@ -62,6 +62,7 @@ SCANNED_CONFIDENCE_CAP = 0.95       # scanned extraction capped even with LLM bo
 CHUNK_MAX_RETRIES = 2               # per-chunk retries with validation error feedback
 FAILED_PAGE_RATIO = 0.30            # > 30% pages degraded -> job failed
 COVERAGE_WARN_THRESHOLD = 0.60      # output chars < 60% of extracted -> warn
+FIDELITY_DRIFT_THRESHOLD = 0.99    # tier-1 bag fidelity below this -> warn + failure-counter drift hook
 
 # ─── Bulk conversion (P4) ─────────────────────────────────────────────────────
 BULK_MAX_FILES = int(os.environ.get("CONVERSION_BULK_MAX_FILES", "10"))

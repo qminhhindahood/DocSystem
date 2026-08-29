@@ -168,6 +168,12 @@ def _record_job_metrics(report) -> None:
     METRICS.observe_duration(report.timings.get("total_s", 0.0))
     METRICS.observe_confidence(report.confidence)
     METRICS.record_outcome(report.status)
+    # Tier-1 drift hook (ticket 05): silent fidelity drift on a text-path
+    # job is a quality failure — the existing failure counters catch it.
+    ledger = report.fidelity_ledger or {}
+    if ledger.get("fidelity", 1.0) < config.FIDELITY_DRIFT_THRESHOLD:
+        METRICS.inc("conversion_jobs_total", status="failed")
+        METRICS.record_outcome("failed")
 
 
 def _pending_refund(job: AdmittedJob) -> PendingQuotaRefund | None:
@@ -494,6 +500,7 @@ async def convert_report(job_id: str) -> dict[str, Any]:
         "pageTypes": report.get("page_types", {}),
         "warnings": report.get("warnings", []),
         "timings": report.get("timings", {}),
+        "fidelityLedger": report.get("fidelity_ledger"),
     }
 
 

@@ -1,6 +1,6 @@
 # 05 — Per-job fidelity ledger (digital-path verbatim guarantee)
 
-Status: open
+Status: resolved
 Blocked by: (none)
 
 ## Why
@@ -31,3 +31,32 @@ any deviation in the reliability report (`/convert/:id/report`).
 - [ ] Report endpoint test: ledger fields present in the report payload.
 - [ ] Scanned job: report shows confidence, not a fake fidelity number.
 - [ ] Conversion suite green.
+
+## Implementation answers (2026-01 session)
+
+- **Metric design (probe-driven)**: an ordered CER ledger false-alarms on
+  perfectly verbatim documents — the QD fixture (all 570 chars preserved)
+  scores 0.69 ordered-CER purely from block reordering (header/signature
+  grouping) and the Decree-30 uppercase transform ("Điều 1." -> "ĐIỀU 1.").
+  The honest tier-1 metric is BAG (multiset) fidelity on case-folded,
+  whitespace-collapsed text: immune to reordering + documented uppercase,
+  exact on every other character. Verified: QD fixture reports 1.0 / 0.0.
+- **Normalization is stated, never silent**: the payload carries the
+  normalization list ("casefold", "whitespace-collapse", "bag-order-free")
+  so the number is never misread as a strict byte compare.
+- **CER definition**: bag divergence rate — (missing + extra) / max(len);
+  a substitution counts 2 units, so the ledger is never optimistic.
+- **Scanned jobs**: ledger is explicitly None — no fake fidelity number
+  against text that doesn't exist in the source. Report shows confidence.
+- **Drift hook**: fidelity < 0.99 (FIDELITY_DRIFT_THRESHOLD) increments the
+  existing failure counters in BOTH paths — worker (queue mode) and main's
+  sync path — so the existing high_failure_rate alert catches silent drift;
+  the user-facing job status degrades to completed_with_warnings with a
+  Vietnamese warning + capped divergence spans for review.
+- **Surfacing**: ConversionReport.fidelity_ledger flows through asdict()
+  to the job store and /convert/{id}/report as fidelityLedger.
+- **Layout deviation (accepted)**: one fidelity.py module (not
+  structuring/) — the ledger compares pipeline-extracted text vs saved DOCX,
+  which is a pipeline-level concern, not structuring.
+- **Tests**: 15 new (11 unit incl. span caps + normalization honesty, 2
+  pipeline integration, 2 HTTP endpoint). Suite: 202 passed.

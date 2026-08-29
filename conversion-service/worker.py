@@ -120,6 +120,16 @@ def process_job(store: JobStore, job: dict) -> None:
         METRICS.observe_duration(report.timings.get("total_s", 0.0))
         METRICS.observe_confidence(report.confidence)
         METRICS.record_outcome(report.status)
+        # Tier-1 drift hook (ticket 05): silent fidelity drift on a text-path
+        # job IS a quality failure — increment the existing failure counters
+        # so the existing high_failure_rate alert catches it. The job's
+        # user-facing status stays as reported (completed_with_warnings);
+        # ops sees the failure rate rise.
+        ledger = report.fidelity_ledger or {}
+        if ledger.get("fidelity", 1.0) < config.FIDELITY_DRIFT_THRESHOLD:
+            METRICS.inc("conversion_jobs_total", status="failed")
+            METRICS.record_redis("jobs:failed", redis_client=store.redis_client)
+            METRICS.record_outcome("failed")
         if report.status == "failed":
             store.update(job_id, status="failed", progress=1.0, report=asdict(report))
             delete_job_artifacts(job_id)
