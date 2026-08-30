@@ -2,6 +2,47 @@
 
 Latest state first. Each entry: what changed, how verified, where it lives.
 
+## 2026-01 — Tickets 07–08 resolved (production-readiness run, continued)
+
+- **07 (`1d1009b`) Cloudflare frontend via OpenNext**:
+  next 16.2.11→16.3.3 (adapter 1.20.4 peer floor),
+  @opennextjs/cloudflare + wrangler.jsonc (nodejs_compat,
+  global_fetch_strictly_public, assets binding, worker self-reference;
+  no R2/images — app uses no next/image, no ISR), open-next.config.ts
+  (defineCloudflareConfig). **The verification caught a real bug**: both
+  backend.ts and the proxy route captured BACKEND_API_URL into module-load
+  consts — on Workers env vars land in process.env at request time, so the
+  value would freeze to the localhost fallback and every proxied request
+  would 502 in production. Fixed to per-call backendUrl() reads; PROVEN
+  under wrangler dev/workerd (worker fetched the exact .dev.vars target);
+  locked red-first by vitest (backend.test.ts 4, proxy-route-env.test.ts
+  3) + Pester source contracts (CloudflarePages.Tests.ps1 7). BACKEND_API_URL
+  is a dashboard runtime variable (Pester forbids wrangler vars). CI
+  frontend job builds the worker. Scripts build:worker/preview:worker.
+  Human steps left (need the real Cloudflare account): git-integration
+  connect, custom domain, prod variable, live >4.5MB upload + cookie-flag
+  checks — runbook §7.1/§7.4 + cutover checklist.
+- **08 (`6a41fb0`) Cutover gate + monitoring**:
+  CUTOVER_CHECKLIST.md rewritten as the full hard gate (prod overlay
+  stack-up, preflight PASS paste box, smoke battery incl. >4.5MB proof +
+  legacy-TCVN3 + fidelityLedger, backup/admin-reset exercises, human
+  sign-off, rollback, honest limitations). **Preflight PROVEN**:
+  PREFLIGHT: PASS (7/7) from the repo clone against the live container —
+  with the operational discovery that preflight must run from the VM
+  clone, not docker exec (lean image ships no eval/scripts/shared;
+  typography sync needs the repo layout). Runbook §8: exact monitoring
+  setup (UptimeRobot 3× /health, Grafana Cloud free tier via VM
+  Prometheus, two PromQL alert rules, Alertmanager Telegram+email) with
+  the daily manual fallback until the user supplies bot token/chat
+  ID/email. Pester CutoverGate.Tests.ps1 12/12.
+- **Verified (all run this session)**: pytest 202/202, frontend vitest
+  236/236, backend jest 278/278, ops Pester 76/76 (57 + 7 + 12),
+  opennextjs-cloudflare build clean, whitespace clean, no secrets in the
+  diff (npm integrity hashes only), .dev.vars untracked.
+- **Remaining (all user-owned by design)**: walk CUTOVER_CHECKLIST.md on
+  the real VM + Cloudflare dashboard steps + the real-PDF sign-off;
+  monitoring materials; legacy real-corpus eval (20–50 PDFs).
+
 ## 2026-08-29 — Tickets 02–06 resolved (production-readiness run, one session)
 
 Five tickets, TDD throughout, committed individually on
