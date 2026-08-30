@@ -10,3 +10,8 @@ google-genai>=1.0
 redis>=5.0
 httpx>=0.27
 pillow>=10.0
+# Transitive (pip tooling) but shipped in the image; 0.45.x trips the CI
+# Trivy gate — CVE-2026-24049, fixed in 0.46.2. setuptools vendors its own
+# wheel copy, so it needs the same floor (84+ vendors wheel 0.46.3).
+wheel>=0.46.2
+setuptools>=84
