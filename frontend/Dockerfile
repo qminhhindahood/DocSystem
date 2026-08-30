@@ -23,7 +23,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 # Allow runtime injection of the backend URL (server-side proxy only).
 ENV BACKEND_API_URL=http://backend:3001
-RUN addgroup -S nodejs \
+# The digest-pinned base snapshot lags Alpine security fixes; upgrade the
+# runtime stage's OS packages (Trivy gate: CVE-2026-14456 in libcrypto3).
+RUN apk upgrade --no-cache \
+    && addgroup -S nodejs \
     && adduser -S nextjs -G nodejs \
     && rm -rf /usr/local/lib/node_modules/npm \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx
