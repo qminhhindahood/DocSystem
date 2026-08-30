@@ -53,12 +53,12 @@ type MulterRequest = Request & { file?: Express.Multer.File };
 /** Best-effort removal of any staging files multer recorded on the request. */
 function removeStagedFiles(req: Request): void {
   const multerReq = req as MulterRequest & { files?: Express.Multer.File[] };
-  const staged: Express.Multer.File[] = [];
-  if (multerReq.file) staged.push(multerReq.file);
-  if (Array.isArray(multerReq.files)) staged.push(...multerReq.files);
-  for (const file of staged) {
-    void fs.promises.unlink(file.path).catch(() => undefined);
-  }
+    const staged: Express.Multer.File[] = [];
+    if (multerReq.file) staged.push(multerReq.file);
+    if (Array.isArray(multerReq.files)) staged.push(...multerReq.files);
+    for (const file of staged) {
+      void fs.promises.unlink(file.path).catch(() => undefined);
+    }
 }
 
 /**
@@ -129,8 +129,13 @@ router.post(
     if (!file) {
       return res.status(400).json({ error: 'A PDF file is required (field: file)' });
     }
+    // Staged cleanup happens BEFORE the response is sent: the upload contract
+    // is that once the client sees the status, `.incoming` is already clean
+    // (cleanup after the response races the client and leaks staging files).
+    const removeStaged = () => fs.promises.unlink(file.path).catch(() => undefined);
     try {
       if (!(await isPdfFile(file.path))) {
+        await removeStaged();
         return res.status(400).json({ error: 'Invalid PDF file' });
       }
       const userId = req.user!.userId;
@@ -139,8 +144,10 @@ router.post(
       // conversion service answers scanned uploads with its upfront 422.
       const vision = await getVisionConfig(userId);
       const result = await submitConversion(file.path, file.originalname || 'upload.pdf', userId, vision);
+      await removeStaged();
       return res.status(202).json({ success: true, jobId: result.jobId });
     } catch (error: any) {
+      await removeStaged();
       const status = error?.response?.status;
       const detail = error?.response?.data?.detail;
       if (status === 422 || status === 429 || status === 400) {
@@ -148,9 +155,6 @@ router.post(
       }
       console.error('Conversion submit error:', error?.message || error);
       return res.status(502).json({ error: 'Conversion service unavailable' });
-    } finally {
-      // The conversion service has its own copy; remove the local staging file.
-      await fs.promises.unlink(file.path).catch(() => undefined);
     }
   },
 );
@@ -169,17 +173,24 @@ router.post(
       return res.status(400).json({ error: 'At least one PDF file is required (field: files)' });
     }
     const staged: Array<{ path: string; name: string }> = [];
+    // Same contract as single upload: staging is clean before the client
+    // sees the response (see removeStaged note above).
+    const removeStaged = () =>
+      Promise.all(files.map((f) => fs.promises.unlink(f.path).catch(() => undefined)));
     try {
       for (const file of files) {
         if (!(await isPdfFile(file.path))) {
+          await removeStaged();
           return res.status(400).json({ error: `Invalid PDF file: ${file.originalname}` });
         }
         staged.push({ path: file.path, name: file.originalname || 'upload.pdf' });
       }
       const vision = await getVisionConfig(req.user!.userId);
       const result = await submitBulkConversion(staged, req.user!.userId, vision);
+      await removeStaged();
       return res.status(202).json({ success: true, ...result });
     } catch (error: any) {
+      await removeStaged();
       const status = error?.response?.status;
       const detail = error?.response?.data?.detail;
       if (status === 422 || status === 429 || status === 400) {
@@ -187,10 +198,6 @@ router.post(
       }
       console.error('Bulk conversion submit error:', error?.message || error);
       return res.status(502).json({ error: 'Conversion service unavailable' });
-    } finally {
-      for (const file of files) {
-        await fs.promises.unlink(file.path).catch(() => undefined);
-      }
     }
   },
 );
