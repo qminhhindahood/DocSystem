@@ -23,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fidelity import FidelityLedger, compute_ledger
+from tests.serif_font import TIMES
 
 
 class TestComputeLedgerDigital:
@@ -128,7 +129,7 @@ class TestLedgerIntegration:
 
         doc = fitz.open()
         page = doc.new_page()
-        font = fitz.Font(fontfile=r"C:\Windows\Fonts\times.ttf")
+        font = fitz.Font(fontfile=TIMES)
         tw = fitz.TextWriter(page.rect)
         tw.append(
             (72, 96),

@@ -6,10 +6,7 @@ from docx import Document
 from docx.oxml.ns import qn
 
 from pipeline import convert_pdf
-
-
-TIMES = r"C:\Windows\Fonts\times.ttf"
-TIMESBD = r"C:\Windows\Fonts\timesbd.ttf"
+from tests.serif_font import TIMES, TIMESBD
 
 
 def _write_text(page, x: float, y: float, text: str, *, bold: bool = False) -> None:

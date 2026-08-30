@@ -40,8 +40,7 @@ from vision.gemini_contract import (
     convert_scanned_pages_parallel,
     plan_batches,
 )
-
-TIMES = r"C:\Windows\Fonts\times.ttf"
+from tests.serif_font import TIMES
 
 # ─── Realistic Gemini output (a clean Quyết định, page 1) ─────────────────────
 # Derived from eval/fixtures/quyet_dinh.json — the same block contract the real
