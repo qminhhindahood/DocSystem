@@ -12,7 +12,8 @@ function trustedProxyHops(): number {
 function forwardedValue(value: string | null, hops: number): string | null {
   if (!value) return null;
   const values = value.split(',').map(part => part.trim()).filter(Boolean);
-  return values[Math.max(0, values.length - hops)] ?? null;
+  const index = values.length - hops;
+  return index >= 0 ? values[index] ?? null : null;
 }
 
 function trustedForwardedOrigin(request: NextRequest): string | null {
@@ -25,6 +26,19 @@ function trustedForwardedOrigin(request: NextRequest): string | null {
 
   try {
     return new URL(`${protocol}://${host}`).origin;
+  } catch {
+    return null;
+  }
+}
+
+function directRequestOrigin(request: NextRequest): string | null {
+  const host = request.headers.get('host')?.trim();
+  const protocol = request.nextUrl.protocol;
+  if (!host || !['http:', 'https:'].includes(protocol) || /[\s,/@\\]/.test(host)) {
+    return null;
+  }
+  try {
+    return new URL(`${protocol}//${host}`).origin;
   } catch {
     return null;
   }
@@ -63,6 +77,8 @@ export function enforceMutationOrigin(request: NextRequest): NextResponse | null
   }
 
   const allowedOrigins = new Set([request.nextUrl.origin]);
+  const directOrigin = directRequestOrigin(request);
+  if (directOrigin) allowedOrigins.add(directOrigin);
   const forwardedOrigin = trustedForwardedOrigin(request);
   if (forwardedOrigin) allowedOrigins.add(forwardedOrigin);
 

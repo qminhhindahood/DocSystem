@@ -70,7 +70,7 @@ frontend (/api/proxy) ──► backend POST /api/convert ──► [quota, vali
 - **Queue mode**: backend enqueues jobs to Redis; the worker consumes them via
   BRPOPLPUSH (crash-safe: processing list + startup reclaim). Terminal-state
   LREM removes completed jobs.
-- **Daily quota**: 20 docs/user/day, charged only after PDF validation passes.
+- **Daily quota**: `QUOTA_DAILY_LIMIT` env var (default 50 docs/user/day), charged only after PDF validation passes.
   Failed conversions use an atomic exact-key refund marker and durable retry.
 - **Owner scope**: GET /:jobId, /:jobId/report, /:jobId/result all assert job
   ownership. Unknown and not-yours both return 404.
@@ -200,12 +200,24 @@ LLM_CONFIG_ENCRYPTION_KEY=<64-hex-chars>   # AES-256-GCM key for users' BYOK API
 # Optional
 CORS_ORIGIN=http://localhost:3000
 TRUST_PROXY_HOPS=0
+UPLOAD_RATE_LIMIT_MAX=60   # upload burst budget / 15 min (headroom above QUOTA_DAILY_LIMIT)
 NODE_ENV=development
 PASSWORD_RESET_MODE=email
 DISABLE_PUBLIC_REGISTER=false
 ALLOW_STACK_TRACES=false
 PRISMA_LOG_QUERIES=false
+SESSION_COOKIE_SECURE=false   # true only behind TLS (prod overlay sets it)
 ```
+
+### Production-only (VM .env — docker-compose.prod.yml overlay)
+```
+CORS_ORIGIN=https://app.<domain>   # Cloudflare Pages origin (required, :? guard)
+API_DOMAIN=api.<domain>             # Caddy site label (required — empty label
+                                   # breaks Caddy config parsing)
+```
+Ticket 06 (ADR-0002): prod composition = `docker-compose.yml` +
+`docker-compose.prod.yml` (caddy edge, hardened backend, frontend disabled —
+Cloudflare Pages serves it). No credentials in the overlay or Caddyfile.
 
 ### Frontend (.env.local)
 ```

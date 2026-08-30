@@ -4,11 +4,11 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The internal service's status and report responses include the owning user id
-- [ ] Backend status, report, and result reads return 404 when the job's owner differs from the authenticated user
-- [ ] A job state without an owning user is denied, not allowed
-- [ ] The result download performs the ownership check before streaming the DOCX
-- [ ] Contract tests cover: owner can read, non-owner gets 404, unknown job gets 404
-- [ ] The full backend test suite passes
+- [x] The internal service's status and report responses include the owning user id
+- [x] Backend status, report, and result reads return 404 when the job's owner differs from the authenticated user
+- [x] A job state without an owning user is denied, not allowed
+- [x] The result download performs the ownership check before streaming the DOCX
+- [x] Contract tests cover: owner can read, non-owner gets 404, unknown job gets 404
+- [x] The full backend test suite passes

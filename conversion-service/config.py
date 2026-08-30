@@ -18,6 +18,7 @@ WORK_DIR = Path(os.environ.get("CONVERSION_WORK_DIR", SERVICE_DIR / "work"))
 UPLOAD_DIR = WORK_DIR / "uploads"
 OUTPUT_DIR = WORK_DIR / "outputs"
 MEDIA_DIR = WORK_DIR / "media"
+REFUND_DIR = WORK_DIR / "refunds"
 
 # ─── Service ──────────────────────────────────────────────────────────────────
 SERVICE_NAME = "conversion-service"
@@ -61,6 +62,7 @@ SCANNED_CONFIDENCE_CAP = 0.95       # scanned extraction capped even with LLM bo
 CHUNK_MAX_RETRIES = 2               # per-chunk retries with validation error feedback
 FAILED_PAGE_RATIO = 0.30            # > 30% pages degraded -> job failed
 COVERAGE_WARN_THRESHOLD = 0.60      # output chars < 60% of extracted -> warn
+FIDELITY_DRIFT_THRESHOLD = 0.99    # tier-1 bag fidelity below this -> warn + failure-counter drift hook
 
 # ─── Bulk conversion (P4) ─────────────────────────────────────────────────────
 BULK_MAX_FILES = int(os.environ.get("CONVERSION_BULK_MAX_FILES", "10"))
@@ -80,6 +82,25 @@ QUOTA_REFUND_RETRY_DELAY_S = max(
     0.1, float(os.environ.get("CONVERSION_QUOTA_REFUND_RETRY_DELAY_S", "1"))
 )
 
+# ─── Quota (P3, plan §8; ticket 01) ────────────────────────────────────────────
+# Daily docs/user. Pilot policy is 50 (grill Q6/Q11). Invalid or non-positive
+# values fail fast at import — a typo must never silently shrink or zero the
+# quota guard that caps a user's BYOK Gemini spend and system load.
+def _daily_quota_limit() -> int:
+    raw = os.environ.get("QUOTA_DAILY_LIMIT", "50")
+    try:
+        value = int(raw)
+    except ValueError:
+        raise RuntimeError(
+            f"QUOTA_DAILY_LIMIT must be an integer, got {raw!r}"
+        ) from None
+    if value <= 0:
+        raise RuntimeError(f"QUOTA_DAILY_LIMIT must be > 0, got {value}")
+    return value
+
+
+DAILY_QUOTA_LIMIT = _daily_quota_limit()
+
 # ─── Eval targets (plan §12) ──────────────────────────────────────────────────
 EVAL_CER_DIGITAL_MAX = 0.02
 EVAL_CER_SCANNED_MAX = 0.05
@@ -89,5 +110,5 @@ EVAL_HALLUCINATION_MAX = 0.0
 
 
 def ensure_dirs() -> None:
-    for d in (UPLOAD_DIR, OUTPUT_DIR, MEDIA_DIR):
+    for d in (UPLOAD_DIR, OUTPUT_DIR, MEDIA_DIR, REFUND_DIR):
         d.mkdir(parents=True, exist_ok=True)

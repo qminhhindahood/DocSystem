@@ -51,7 +51,6 @@ export const requestTimeout = (options: TimeoutOptions) => {
   };
 };
 
-// Default timeout: 60 seconds for document generation
+// Reusable request timeouts for the surviving API surface.
 export const defaultTimeout = requestTimeout({ ms: 60000 });
-export const generationTimeout = requestTimeout({ ms: 900000, message: 'Document generation timeout' });
 export const fastTimeout = requestTimeout({ ms: 10000 });

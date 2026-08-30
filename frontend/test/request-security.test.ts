@@ -42,6 +42,27 @@ describe('mutation origin enforcement', () => {
     expect(enforceMutationOrigin(request)).toBeNull();
   });
 
+  it('uses the browser-visible Host when standalone Next binds to 0.0.0.0', () => {
+    const request = new NextRequest('http://0.0.0.0:3000/api/session/login', {
+      method: 'POST',
+      headers: {
+        host: 'localhost:3000',
+        origin: 'http://localhost:3000',
+      },
+    });
+
+    expect(enforceMutationOrigin(request)).toBeNull();
+
+    const crossOrigin = new NextRequest('http://0.0.0.0:3000/api/session/login', {
+      method: 'POST',
+      headers: {
+        host: 'localhost:3000',
+        origin: 'https://evil.example',
+      },
+    });
+    expect(enforceMutationOrigin(crossOrigin)?.status).toBe(403);
+  });
+
   it('allows an originless internal request only with the configured bearer token', () => {
     vi.stubEnv('FRONTEND_INTERNAL_API_TOKEN', 'internal-secret');
     const request = new NextRequest('https://docs.example/api/analytics/track', {

@@ -5,6 +5,7 @@ import { normalizeReturnTo } from '@/lib/server/session';
 const mockForwardToBackend = vi.fn();
 vi.mock('@/lib/server/backend', () => ({
   forwardToBackend: (...args: unknown[]) => mockForwardToBackend(...args),
+  backendUrl: () => 'http://backend.test',
 }));
 
 import { POST as signup } from '@/app/api/session/signup/route';
@@ -93,7 +94,7 @@ describe('password recovery session routes', () => {
     expect(mockForwardToBackend).not.toHaveBeenCalled();
   });
 
-  it('derives the internal client address and ignores a spoofed internal header', async () => {
+  it('uses the client appended by the trusted proxy and ignores spoofed headers', async () => {
     vi.stubEnv('FRONTEND_TRUST_PROXY_HOPS', '1');
     mockForwardToBackend.mockResolvedValue(new Response(JSON.stringify({
       token: 'session-token', user: { id: 'u1', username: 'alice' },
@@ -102,13 +103,13 @@ describe('password recovery session routes', () => {
       username: 'alice', email: 'alice@example.com', password: 'password123', passwordConfirmation: 'password123',
       turnstileToken: 'challenge-token',
     });
-    request.headers.set('x-forwarded-for', '203.0.113.8, 10.0.0.2');
+    request.headers.set('x-forwarded-for', '203.0.113.99, 198.51.100.7');
     request.headers.set('x-docai-client-ip', '198.51.100.2');
 
     await signup(request);
 
     expect(mockForwardToBackend).toHaveBeenCalledWith('POST', '/api/auth/register', expect.objectContaining({
-      headers: expect.objectContaining({ 'X-DocAI-Client-IP': '203.0.113.8' }),
+      headers: expect.objectContaining({ 'X-DocAI-Client-IP': '198.51.100.7' }),
     }));
   });
 

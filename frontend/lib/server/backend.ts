@@ -1,7 +1,17 @@
-const BACKEND_URL = (process.env.BACKEND_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
+const FALLBACK_BACKEND_URL = 'http://localhost:3001';
 
+/**
+ * Resolve the backend origin per call, not at module load.
+ *
+ * On Cloudflare Workers (Pages via @opennextjs/cloudflare) the platform env
+ * vars are copied into process.env at REQUEST time by the adapter's init
+ * (populateProcessEnv) — after worker startup. A module-load-time const would
+ * freeze to the localhost fallback and every proxied request would fail in
+ * production. Reading per call is the compatible shape for both the Node
+ * dev/standalone server and the worker runtime.
+ */
 export function backendUrl(): string {
-  return BACKEND_URL;
+  return (process.env.BACKEND_API_URL || FALLBACK_BACKEND_URL).replace(/\/+$/, '');
 }
 
 export async function forwardToBackend(
@@ -14,7 +24,7 @@ export async function forwardToBackend(
     signal?: AbortSignal;
   } = {},
 ): Promise<Response> {
-  const target = `${BACKEND_URL}${path}`;
+  const target = `${'$'}{backendUrl()}${'$'}{path}`;
   const headers: Record<string, string> = {
     ...options.headers,
   };
@@ -30,6 +40,6 @@ export async function forwardToBackend(
     return backendRes;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Backend unreachable: ${message}`);
+    throw new Error(`Backend unreachable: ${'$'}{message}`);
   }
 }

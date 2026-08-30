@@ -1,0 +1,71 @@
+# Production overlay for the Oracle Always Free ARM VM (ADR-0002).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Diffs from the dev composition (docker-compose.yml):
+#   + caddy edge (TLS on api.<domain>, ACME on 80/443)
+#   + backend hardened for TLS termination at Caddy:
+#       SESSION_COOKIE_SECURE=true, TRUST_PROXY_HOPS=1,
+#       CORS_ORIGIN=https://app.<domain> (from VM .env)
+#   - frontend service disabled: it lives on Cloudflare Pages (ticket 07).
+#     Mechanism: profiles: ["cloudflare-only"] — a profile that is never
+#     activated on the VM, so compose never starts the frontend there.
+#     (Dev keeps running it via plain docker-compose.yml.)
+#
+# All secrets stay in the VM .env (mode 600) — nothing is baked in here.
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"        # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data     # ACME account + certs
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:80"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    # Disabled on the VM: Cloudflare Pages serves the frontend (ticket 07).
+    # Dev composes (docker-compose.yml alone) still run it.
+    profiles: ["cloudflare-only"]
+
+  backend:
+    environment:
+      # TLS terminates at Caddy — cookies must be Secure, and Express must
+      # trust exactly one proxy hop (Caddy) for X-Forwarded-* handling.
+      SESSION_COOKIE_SECURE: "true"
+      TRUST_PROXY_HOPS: "1"
+      NODE_ENV: production
+      # Cloudflare Pages origin (ticket 07) — from VM .env, never baked in.
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required in the VM .env}
+    logging: &prod-logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postgres:
+    logging: *prod-logging
+
+  redis:
+    logging: *prod-logging
+
+  conversion:
+    logging: *prod-logging
+
+  conversion-worker:
+    logging: *prod-logging
+
+volumes:
+  caddy_data:
+  caddy_config:

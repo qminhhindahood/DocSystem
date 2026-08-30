@@ -40,8 +40,7 @@ from vision.gemini_contract import (
     convert_scanned_pages_parallel,
     plan_batches,
 )
-
-TIMES = r"C:\Windows\Fonts\times.ttf"
+from tests.serif_font import TIMES
 
 # ─── Realistic Gemini output (a clean Quyết định, page 1) ─────────────────────
 # Derived from eval/fixtures/quyet_dinh.json — the same block contract the real
@@ -414,13 +413,17 @@ def test_worker_fails_fast_on_vision_auth_error_and_refunds(monkeypatch, tmp_pat
     store = JobStore(redis_client=fakeredis.FakeRedis(decode_responses=True))
     quota = QuotaService(redis_client=store.redis_client, limit=3)
     monkeypatch.setattr(worker, "QUOTA", quota)
+    charge, _remaining = quota.charge("uauth")
+    assert charge is not None
 
     pdf = tmp_path / "doc.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
     job = {"jobId": "jauth", "pdfPath": str(pdf), "filename": "doc.pdf",
-           "userId": "uauth",
-           "vision": {"provider": "gemini", "model": "m", "apiKey": "bad"}}
-    store.save("jauth", {"jobId": "jauth", "status": "queued", "userId": "uauth"})
+               "userId": "uauth",
+               "quotaKey": charge.key,
+               "vision": {"provider": "gemini", "model": "m", "apiKey": "bad"}}
+    store.save("jauth", {"jobId": "jauth", "status": "queued", "userId": "uauth",
+                         "quotaKey": charge.key})
     store.enqueue(job)
     dequeued = store.dequeue(timeout=1)
 
@@ -428,7 +431,6 @@ def test_worker_fails_fast_on_vision_auth_error_and_refunds(monkeypatch, tmp_pat
         raise VisionAuthError("Gemini rejected the provided API key")
     monkeypatch.setattr(worker, "convert_pdf", raise_auth)
 
-    assert quota.check_and_increment("uauth")[0] is True  # charged on submit
     assert _redis_count(quota, "uauth") == 1
 
     worker.process_job(store, dequeued)

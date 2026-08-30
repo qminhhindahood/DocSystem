@@ -14,9 +14,7 @@ import pytest
 from docx import Document
 
 from pipeline import convert_pdf
-
-TIMES = r"C:\Windows\Fonts\times.ttf"
-TIMESBD = r"C:\Windows\Fonts\timesbd.ttf"
+from tests.serif_font import TIMES, TIMESBD
 
 
 def _docx_text(docx_path: str) -> str:

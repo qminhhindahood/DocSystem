@@ -103,6 +103,12 @@ class _BlockBase(BaseModel):
 
     confidence: float = Field(ge=0.0, le=1.0)
     page: Optional[int] = Field(default=None, ge=1)  # 1-based; stamped per §5
+    bbox: Optional[BBox] = None
+
+    @field_validator("bbox")
+    @classmethod
+    def _optional_bbox_check(cls, value: Optional[BBox]) -> Optional[BBox]:
+        return _check_bbox(value) if value is not None else None
 
 
 class AdminHeaderBlock(_BlockBase):

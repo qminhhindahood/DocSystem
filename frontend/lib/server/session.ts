@@ -8,10 +8,17 @@ export interface SessionCookieOptions {
   maxAge: number;
 }
 
+export function sessionCookieSecure(env: NodeJS.ProcessEnv = process.env): boolean {
+  const configured = env.SESSION_COOKIE_SECURE?.trim().toLowerCase();
+  if (configured === 'true') return true;
+  if (configured === 'false') return false;
+  return env.NODE_ENV !== 'development';
+}
+
 export function sessionCookieOptions(): SessionCookieOptions {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV !== 'development',
+    secure: sessionCookieSecure(),
     sameSite: 'lax',
     path: '/',
     maxAge: 60 * 60 * 24 * 7,

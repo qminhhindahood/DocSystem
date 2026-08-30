@@ -50,6 +50,7 @@ describe('backend boot wiring (standalone conversion product)', () => {
     ) as { scripts?: Record<string, string> };
 
     expect(packageJson.scripts?.['deploy:migrate']).toBe('prisma migrate deploy');
+    expect(packageJson.scripts?.['deploy:detect-baseline']).toBe('node dist/scripts/detect_migration_baseline.js');
     expect(packageJson.scripts?.['deploy:bootstrap']).toBe('node dist/scripts/bootstrap_user.js');
   });
 });

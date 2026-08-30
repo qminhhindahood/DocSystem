@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const forwardToBackend = vi.fn();
 vi.mock('@/lib/server/backend', () => ({
   forwardToBackend: (...args: unknown[]) => forwardToBackend(...args),
+  backendUrl: () => 'http://backend.test',
 }));
 
 beforeEach(() => {

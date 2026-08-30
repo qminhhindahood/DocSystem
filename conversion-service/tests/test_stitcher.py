@@ -47,16 +47,20 @@ def test_no_join_when_terminal_punct():
 
 
 def test_strip_repeated_running_header():
-    h1 = ParagraphBlock(text="BÁO CÁO ĐỊNH KỲ", confidence=1.0, page=1)
-    h2 = ParagraphBlock(text="BÁO CÁO ĐỊNH KỲ", confidence=1.0, page=2)
-    body = ParagraphBlock(text="Nội dung riêng.", confidence=1.0, page=1)
+    h1 = ParagraphBlock(text="BÁO CÁO ĐỊNH KỲ", confidence=1.0, page=1,
+                        bbox=[100, 20, 900, 70])
+    h2 = ParagraphBlock(text="BÁO CÁO ĐỊNH KỲ", confidence=1.0, page=2,
+                        bbox=[100, 18, 900, 68])
+    body = ParagraphBlock(text="Nội dung riêng.", confidence=1.0, page=1,
+                          bbox=[100, 300, 900, 350])
     out = strip_running_headers([h1, body, h2])
     assert len(out) == 1
     assert out[0].text == "Nội dung riêng."
 
 
 def test_strip_page_numbers():
-    pn = ParagraphBlock(text="5", confidence=1.0, page=5)
+    pn = ParagraphBlock(text="5", confidence=1.0, page=5,
+                        bbox=[480, 920, 520, 950])
     out = strip_running_headers([pn])
     assert out == []
 
@@ -64,9 +68,9 @@ def test_strip_page_numbers():
 def test_merge_split_tables_same_columns():
     t1 = TableBlock(headers=[[TableCell(text="A"), TableCell(text="B")]],
                     rows=[[TableCell(text="1"), TableCell(text="2")]],
-                    confidence=0.9, page=1)
+                    confidence=0.9, page=1, bbox=[50, 700, 950, 940])
     t2 = TableBlock(rows=[[TableCell(text="3"), TableCell(text="4")]],
-                    confidence=0.9, page=2)
+                    confidence=0.9, page=2, bbox=[50, 30, 950, 260])
     out = merge_split_tables([t1, t2])
     assert len(out) == 1
     assert len(out[0].rows) == 2

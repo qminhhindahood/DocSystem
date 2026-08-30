@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Be_Vietnam_Pro, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '@/components/auth/AuthProvider';
+import { MotionProvider } from '@/components/providers/MotionProvider';
 import { QueryProvider } from '@/components/providers/QueryProvider';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
 
@@ -20,8 +21,9 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'DocAI — Soạn thảo văn bản hành chính',
-  description: 'Soạn thảo, quản lý và tra cứu văn bản hành chính có căn cứ.',
+  title: 'DocAI — Chuyển đổi PDF sang DOCX',
+  description:
+    'Chuyển đổi PDF sang DOCX theo Nghị định 30, kèm báo cáo độ tin cậy và độ bao phủ.',
 };
 
 export default function RootLayout({
@@ -38,7 +40,9 @@ export default function RootLayout({
       <body>
         <QueryProvider>
           <ThemeProvider>
-            <AuthProvider>{children}</AuthProvider>
+            <MotionProvider>
+              <AuthProvider>{children}</AuthProvider>
+            </MotionProvider>
           </ThemeProvider>
         </QueryProvider>
       </body>

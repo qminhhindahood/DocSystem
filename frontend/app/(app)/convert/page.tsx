@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, Download, FileText, FileOutput, AlertTriangle } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { Plus, Download, FileText, FileOutput, AlertTriangle, X } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConvertUploadDialog, SubmittedJob } from "@/components/convert/ConvertUploadDialog";
+import { listItem, springSoft } from "@/lib/motion";
 import {
   getConversionStatus,
   getConversionReport,
@@ -17,12 +19,20 @@ import {
 interface ConversionJob {
   jobId: string;
   filename: string;
-  sourceUrl: string | null; // object URL for the uploaded PDF preview
+  sourceFile: File | null;
   status: ConversionStatus | null;
   error: string | null;
   report: ConversionReport | null;
   reportOpen: boolean;
 }
+
+type JobUpdate = Partial<ConversionJob> | ((current: ConversionJob) => ConversionJob);
+
+type SourcePreview = {
+  jobId: string;
+  filename: string;
+  url: string;
+};
 
 const POLL_INTERVAL_MS = 1500;
 
@@ -42,11 +52,42 @@ function isTerminal(status: string): boolean {
   return status === "completed" || status === "completed_with_warnings" || status === "failed";
 }
 
+/** Draw-on confidence ring; turns warning-colored below the 70% review bar. */
+function ConfidenceRing({ value }: { value: number }) {
+  const clamped = Math.max(0, Math.min(1, value));
+  return (
+    <svg viewBox="0 0 36 36" className="h-6 w-6 -rotate-90 flex-shrink-0" aria-hidden="true">
+      <circle
+        cx="18"
+        cy="18"
+        r="15.91"
+        fill="none"
+        strokeWidth="4.2"
+        className="stroke-surface-strong"
+      />
+      <motion.circle
+        cx="18"
+        cy="18"
+        r="15.91"
+        fill="none"
+        strokeWidth="4.2"
+        strokeLinecap="round"
+        className={clamped >= 0.7 ? "stroke-success" : "stroke-warning"}
+        initial={{ pathLength: 0 }}
+        animate={{ pathLength: clamped }}
+        transition={{ duration: 0.8, delay: 0.15, ease: [0.05, 0.7, 0.1, 1] }}
+      />
+    </svg>
+  );
+}
+
 export default function ConvertPage() {
   const [jobs, setJobs] = useState<ConversionJob[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [announcement, setAnnouncement] = useState("");
+  const [preview, setPreview] = useState<SourcePreview | null>(null);
   const jobsRef = useRef<ConversionJob[]>([]);
+  const previewRef = useRef<SourcePreview | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollInFlightRef = useRef(false);
   const mountedRef = useRef(true);
@@ -58,15 +99,19 @@ export default function ConvertPage() {
     }
   }, []);
 
-  const updateJob = useCallback((jobId: string, patch: Partial<ConversionJob>) => {
-    setJobs((prev) => {
-      const next = prev.map((job) => (
-        job.jobId === jobId ? { ...job, ...patch } : job
-      ));
-      jobsRef.current = next;
-      return next;
-    });
+  const mutateJobs = useCallback((mutation: (current: ConversionJob[]) => ConversionJob[]) => {
+    const next = mutation(jobsRef.current);
+    jobsRef.current = next;
+    setJobs(next);
+    return next;
   }, []);
+
+  const updateJob = useCallback((jobId: string, update: JobUpdate) => {
+    mutateJobs((current) => current.map((job) => {
+      if (job.jobId !== jobId) return job;
+      return typeof update === "function" ? update(job) : { ...job, ...update };
+    }));
+  }, [mutateJobs]);
 
   const pollActiveJobs = useCallback(async () => {
     if (pollInFlightRef.current || !mountedRef.current) return;
@@ -89,9 +134,10 @@ export default function ConvertPage() {
       }
       if (!mountedRef.current) return;
       const previous = jobsRef.current;
-      const next = previous.map((job) => ({ ...job, ...patches.get(job.jobId) }));
-      jobsRef.current = next;
-      setJobs(next);
+      const next = mutateJobs((current) => current.map((job) => ({
+        ...job,
+        ...patches.get(job.jobId),
+      })));
       const changed = next.filter((job, index) => {
         const prior = previous[index];
         return prior === undefined
@@ -109,7 +155,7 @@ export default function ConvertPage() {
     } finally {
       pollInFlightRef.current = false;
     }
-  }, [stopPolling]);
+  }, [mutateJobs, stopPolling]);
 
   const startPolling = useCallback(() => {
     if (timerRef.current) return;
@@ -118,46 +164,56 @@ export default function ConvertPage() {
     }, POLL_INTERVAL_MS);
   }, [pollActiveJobs]);
 
-  // Track created object URLs so the unmount cleanup can revoke them
-  // (the browser keeps the Blob alive until revoked even after navigation).
-  const urlsRef = useRef<Map<string, string>>(new Map());
-
-  // Clean up the shared timer + object URLs on unmount.
+  // Clean up the shared timer and the single active object URL on unmount.
   useEffect(() => {
     mountedRef.current = true;
-    const urls = urlsRef.current;
     return () => {
       mountedRef.current = false;
       stopPolling();
-      for (const url of urls.values()) URL.revokeObjectURL(url);
-      urls.clear();
+      const activePreview = previewRef.current;
+      if (activePreview) URL.revokeObjectURL(activePreview.url);
+      previewRef.current = null;
     };
   }, [stopPolling]);
 
   const handleSubmitted = useCallback((submittedJobs: SubmittedJob[]) => {
-    setJobs((prev) => {
-      const next = [
+    mutateJobs((current) => [
         ...submittedJobs.map((job) => {
-          const url = URL.createObjectURL(job.file);
-          urlsRef.current.set(job.jobId, url);
           return ({
             jobId: job.jobId,
             filename: job.filename,
-            sourceUrl: url,
+            sourceFile: job.file,
             status: null,
             error: null,
             report: null,
             reportOpen: false,
           });
         }),
-        ...prev,
-      ];
-      jobsRef.current = next;
-      return next;
-    });
+        ...current,
+      ]);
     setAnnouncement(`${submittedJobs.length} tệp đã được đưa vào hàng đợi chuyển đổi.`);
     startPolling();
-  }, [startPolling]);
+  }, [mutateJobs, startPolling]);
+
+  const closePreview = useCallback(() => {
+    const activePreview = previewRef.current;
+    if (activePreview) URL.revokeObjectURL(activePreview.url);
+    previewRef.current = null;
+    setPreview(null);
+  }, []);
+
+  const openPreview = useCallback((job: ConversionJob) => {
+    if (!job.sourceFile || previewRef.current?.jobId === job.jobId) return;
+    const activePreview = previewRef.current;
+    if (activePreview) URL.revokeObjectURL(activePreview.url);
+    const nextPreview = {
+      jobId: job.jobId,
+      filename: job.filename,
+      url: URL.createObjectURL(job.sourceFile),
+    };
+    previewRef.current = nextPreview;
+    setPreview(nextPreview);
+  }, []);
 
   const loadReport = useCallback(async (jobId: string) => {
     try {
@@ -169,12 +225,10 @@ export default function ConvertPage() {
   }, [updateJob]);
 
   const toggleReport = useCallback((jobId: string) => {
-    setJobs((prev) => prev.map((j) => {
-      if (j.jobId !== jobId) return j;
-      if (!j.report) void loadReport(jobId);
-      return { ...j, reportOpen: !j.reportOpen };
-    }));
-  }, [loadReport]);
+    const current = jobsRef.current.find((job) => job.jobId === jobId);
+    if (current && !current.report) void loadReport(jobId);
+    updateJob(jobId, (job) => ({ ...job, reportOpen: !job.reportOpen }));
+  }, [loadReport, updateJob]);
 
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-6">
@@ -208,39 +262,59 @@ export default function ConvertPage() {
         />
       ) : (
         <ul className="flex flex-col gap-4">
-          {jobs.map((job) => {
-            const status = statusOf(job);
-            const terminal = isTerminal(status);
-            const progress = Math.round((job.status?.progress ?? 0) * 100);
-            const confidence = job.status?.confidence;
-            const degraded = job.status?.degradedPages ?? [];
-            const done = status === "completed" || status === "completed_with_warnings";
-            return (
-              <li
-                key={job.jobId}
-                className="rounded-panel border border-hairline bg-surface p-4"
-                data-testid={`convert-job-${job.jobId}`}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <FileText className="h-4 w-4 flex-shrink-0 text-text-secondary" aria-hidden="true" />
-                    <span className="truncate text-control font-medium text-text-primary">
-                      {job.filename}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={
-                        "rounded-pill px-2.5 py-0.5 text-metadata font-medium " +
-                        (status === "failed"
-                          ? "bg-danger/10 text-danger"
-                          : done
-                            ? "bg-success/10 text-success"
-                            : "bg-action/10 text-action")
-                      }
-                    >
-                      {STATUS_LABELS[status] ?? status}
-                    </span>
+          <AnimatePresence initial={false}>
+            {jobs.map((job) => {
+              const status = statusOf(job);
+              const terminal = isTerminal(status);
+              const progress = Math.round((job.status?.progress ?? 0) * 100);
+              const confidence = job.status?.confidence;
+              const degraded = job.status?.degradedPages ?? [];
+              const done = status === "completed" || status === "completed_with_warnings";
+              return (
+                <motion.li
+                  key={job.jobId}
+                  layout
+                  variants={listItem}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                  className="rounded-panel border border-hairline bg-surface p-4"
+                  data-testid={`convert-job-${job.jobId}`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <FileText className="h-4 w-4 flex-shrink-0 text-text-secondary" aria-hidden="true" />
+                      <span className="truncate text-control font-medium text-text-primary">
+                        {job.filename}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={
+                          "rounded-pill px-2.5 py-0.5 text-metadata font-medium " +
+                          (status === "failed"
+                            ? "bg-error-surface text-error"
+                            : done
+                              ? "bg-success-surface text-success"
+                              : "bg-action-tint text-action")
+                        }
+                      >
+                        {done && (
+                          <span className="check-draw mr-1 inline-flex h-3 w-3 items-center justify-center align-[-2px]" aria-hidden="true">
+                            <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none">
+                              <path
+                                d="M3 8.5L6.5 12L13 4.5"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                pathLength={1}
+                              />
+                            </svg>
+                          </span>
+                        )}
+                        {STATUS_LABELS[status] ?? status}
+                      </span>
                     {done && (
                       <a
                         href={conversionResultUrl(job.jobId)}
@@ -257,9 +331,11 @@ export default function ConvertPage() {
                 {!terminal && (
                   <div className="mt-3">
                     <div className="h-1.5 w-full overflow-hidden rounded-pill bg-surface-strong">
-                      <div
-                        className="h-full rounded-pill bg-action transition-all duration-standard"
-                        style={{ width: `${Math.max(progress, 5)}%` }}
+                      <motion.div
+                        className="h-full w-full origin-left rounded-pill bg-action"
+                        initial={{ scaleX: 0.05 }}
+                        animate={{ scaleX: Math.max(progress, 5) / 100 }}
+                        transition={springSoft}
                         role="progressbar"
                         aria-valuenow={progress}
                         aria-valuemin={0}
@@ -272,38 +348,61 @@ export default function ConvertPage() {
                 )}
 
                 {done && typeof confidence === "number" && (
-                  <p className="mt-2 text-metadata text-text-secondary">
-                    Độ tin cậy: {(confidence * 100).toFixed(0)}%
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-metadata text-text-secondary">
+                    <ConfidenceRing value={confidence} />
+                    <span>
+                      Độ tin cậy: {(confidence * 100).toFixed(0)}%
+                    </span>
                     {degraded.length > 0 && (
-                      <span className="ml-2 inline-flex items-center gap-1 text-warning">
+                      <span className="inline-flex items-center gap-1 text-warning">
                         <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
                         Trang cần kiểm tra: {degraded.join(", ")}
                       </span>
                     )}
-                  </p>
+                  </div>
                 )}
 
                 {status === "failed" && job.error && (
-                  <p role="alert" className="mt-2 text-metadata text-danger">{job.error}</p>
+                  <p role="alert" className="mt-2 text-metadata text-error">{job.error}</p>
                 )}
 
                 {/* Confidence-flag review (P4): flags surfaced, never silent */}
                 {(status === "completed" || status === "completed_with_warnings") && (
                   <div className="mt-3">
-                    <button
-                      type="button"
-                      onClick={() => toggleReport(job.jobId)}
-                      className="inline-flex min-h-11 items-center gap-1.5 rounded-control bg-surface-strong px-3 text-control font-medium text-text-secondary hover:bg-surface hover:text-text-primary"
-                    >
-                      <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
-                      {job.reportOpen ? "Ẩn kết quả kiểm tra" : "Xem kết quả kiểm tra độ tin cậy"}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleReport(job.jobId)}
+                        className="inline-flex min-h-11 items-center gap-1.5 rounded-control bg-surface-strong px-3 text-control font-medium text-text-secondary hover:bg-surface hover:text-text-primary"
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+                        {job.reportOpen ? "Ẩn kết quả kiểm tra" : "Xem kết quả kiểm tra độ tin cậy"}
+                      </button>
+                      {job.sourceFile && (
+                        <button
+                          type="button"
+                          onClick={() => openPreview(job)}
+                          className="inline-flex min-h-11 items-center gap-1.5 rounded-control border border-hairline bg-surface px-3 text-control font-medium text-text-secondary hover:bg-surface-strong hover:text-text-primary"
+                        >
+                          <FileText className="h-4 w-4" aria-hidden="true" />
+                          Xem PDF gốc
+                        </button>
+                      )}
+                    </div>
 
                     {job.reportOpen && (
-                      <div
-                        className="mt-2 rounded-control border border-hairline bg-surface-subtle p-3"
-                        data-testid={`convert-report-${job.jobId}`}
+                      <motion.div
+                        key="report"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.28, ease: [0.05, 0.7, 0.1, 1] }}
+                        className="overflow-hidden"
                       >
+                        <div
+                          className="mt-2 rounded-control border border-hairline bg-surface-subtle p-3"
+                          data-testid={`convert-report-${job.jobId}`}
+                        >
                         {job.report ? (
                           <div className="space-y-2 text-body text-text-secondary">
                             <div className="flex flex-wrap gap-3">
@@ -361,7 +460,7 @@ export default function ConvertPage() {
                                   {job.report.flaggedBlocks.map((b) => (
                                     <li key={b.index} className="rounded-control bg-surface px-2 py-1.5">
                                       <span className="inline-flex items-center gap-1.5">
-                                        <span className="rounded-pill bg-danger/10 px-2 py-0.5 text-metadata font-medium text-danger">
+                                        <span className="rounded-pill bg-error-surface px-2 py-0.5 text-metadata font-medium text-error">
                                           {((b.confidence) * 100).toFixed(0)}%
                                         </span>
                                         <code className="text-metadata text-text-secondary">{b.type}</code>
@@ -381,47 +480,44 @@ export default function ConvertPage() {
                         ) : (
                           <p className="text-body text-text-secondary">Đang tải báo cáo…</p>
                         )}
-                      </div>
+                        </div>
+                      </motion.div>
                     )}
                   </div>
                 )}
 
-                {/* Side-by-side preview: source PDF | converted DOCX download */}
-                {done && job.sourceUrl && (
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <div className="overflow-hidden rounded-control border border-hairline">
-                      <p className="border-b border-hairline bg-surface-strong px-3 py-1.5 text-metadata font-medium text-text-secondary">
-                        Bản gốc (PDF)
-                      </p>
-                      <iframe
-                        src={job.sourceUrl}
-                        title={`Xem trước PDF ${job.filename}`}
-                        className="h-72 w-full bg-workspace"
-                      />
-                    </div>
-                    <div className="flex flex-col items-center justify-center gap-3 rounded-control border border-hairline bg-surface-strong p-6 text-center">
-                      <FileOutput className="h-8 w-8 text-action" aria-hidden="true" />
-                      <p className="text-control font-medium text-text-primary">
-                        Kết quả Word (DOCX)
-                      </p>
-                      <p className="text-body text-text-secondary">
-                        Văn bản đã chuyển đổi theo chuẩn Nghị định 30/2020/NĐ-CP.
-                      </p>
-                      <a
-                        href={conversionResultUrl(job.jobId)}
-                        download
-                        className="inline-flex min-h-11 items-center gap-1.5 rounded-control bg-action px-4 text-control font-semibold text-on-action hover:bg-action-hover"
-                      >
-                        <Download className="h-4 w-4" aria-hidden="true" />
-                        Tải xuống
-                      </a>
-                    </div>
-                  </div>
-                )}
-              </li>
-            );
-          })}
+                </motion.li>
+              );
+            })}
+          </AnimatePresence>
         </ul>
+      )}
+
+      {preview && (
+          <section
+            className="overflow-hidden rounded-panel border border-hairline bg-surface"
+            aria-label={`PDF gốc ${preview.filename}`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline bg-surface-strong px-4 py-3">
+              <h2 className="min-w-0 break-words text-section-title text-text-primary">
+                PDF gốc: {preview.filename}
+              </h2>
+              <button
+                type="button"
+                onClick={closePreview}
+                className="inline-flex min-h-11 items-center gap-2 rounded-control px-3 text-control font-medium text-text-secondary hover:bg-surface hover:text-text-primary"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+                Đóng bản xem trước
+              </button>
+            </div>
+            <iframe
+              src={preview.url}
+              title={`PDF gốc: ${preview.filename}`}
+              loading="lazy"
+              className="h-[min(70dvh,720px)] w-full bg-workspace"
+            />
+          </section>
       )}
 
       <ConvertUploadDialog

@@ -59,10 +59,29 @@ export function rateLimiter(config: RateLimitConfig) {
   };
 }
 
-// H11: dedicated per-user limiter for conversion uploads.
+// H11 / ticket 01: dedicated per-user limiter for conversion uploads.
+// A pilot user converts ~50 docs/day in bursts, so the upload burst budget
+// defaults to 60 per 15 min (headroom above the daily quota) and is
+// env-tunable per deployment. Invalid values fail fast at module load.
+function _uploadRateLimitMax(): number {
+  const raw = process.env.UPLOAD_RATE_LIMIT_MAX ?? '60';
+  // Strict decimal syntax (mirrors Python int() fail-fast on the conversion
+  // side): Number() alone would silently accept '0x10' and '1e2'.
+  const parsed = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(
+      `UPLOAD_RATE_LIMIT_MAX must be a positive integer, got ${raw}`,
+    );
+  }
+  return parsed;
+}
+
+export const UPLOAD_RATE_WINDOW_MS = 15 * 60_000;
+export const UPLOAD_RATE_LIMIT_MAX = _uploadRateLimitMax();
+
 export const uploadLimiter = rateLimiter({
-  windowMs: 15 * 60_000,
-  maxRequests: 20,
+  windowMs: UPLOAD_RATE_WINDOW_MS,
+  maxRequests: UPLOAD_RATE_LIMIT_MAX,
   keyGenerator: (req) => `upload:${USER_KEY(req)}`,
 });
 

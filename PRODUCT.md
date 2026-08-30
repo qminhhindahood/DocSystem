@@ -1,8 +1,9 @@
-# Product
+# Product Context
 
-## Register
+## Product
 
-product
+DocAI is a focused PDF-to-DOCX conversion service for Vietnamese administrative
+documents.
 
 ## Users
 

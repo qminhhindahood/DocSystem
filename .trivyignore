@@ -1,0 +1,18 @@
+# Trivy suppressions — CRITICAL/HIGH Debian trixie CVEs with NO fix available
+# (verified against the Trivy DB on 2026-08-30; the CI gate runs with
+# ignore-unfixed=false, so deferred CVEs need an explicit, justified waiver).
+#
+# All six live in OS packages the conversion runtime never invokes:
+#   - gzip binary: unused (PDF/DOCX handling is pure Python via PyMuPDF).
+#   - libacl1 / libncursesw6 / libtinfo6: not linked by any Python extension
+#     in the image.
+#   - libsqlite3-0: ships with Python stdlib support, but the service talks
+#     to Postgres only (compose contract); no sqlite database is opened.
+#
+# Housekeeping: when Debian ships a fix for any of these, remove the line —
+# the gate then enforces the patched version automatically.
+CVE-2026-41992
+CVE-2026-54369
+CVE-2025-69720
+CVE-2026-11822
+CVE-2026-11824

@@ -30,8 +30,14 @@ foreach ($svc in @('conversion', 'conversion-worker')) {
 if (($config.services.'conversion-worker'.command -join ' ') -notmatch 'worker\.py') { throw 'conversion-worker must run worker.py' }
 if (-not $config.services.'conversion-worker'.healthcheck.disable) { throw 'conversion-worker runs no HTTP server; its healthcheck must be disabled' }
 
-# --- Migrate: one-shot, applies the squashed auth-only migration --------------
-if (($config.services.migrate.command -join ' ') -notmatch 'prisma migrate deploy') { throw 'migrate service must run prisma migrate deploy' }
+# --- Migrate: one-shot, safely baselines compatible pre-Prisma volumes --------
+$migrateCommand = $config.services.migrate.command -join ' '
+if ($migrateCommand -notmatch 'detect_migration_baseline\.js') { throw 'migrate must inspect the existing schema before deployment' }
+if ($migrateCommand -notmatch 'baseline_state') { throw 'migrate must branch on the detector state' }
+if ($migrateCommand -notmatch 'compatible') { throw 'migrate must reserve resolve for compatible legacy schemas' }
+if ($migrateCommand -notmatch 'prisma migrate resolve --applied 20260901000000_init_standalone_auth') { throw 'migrate must baseline only the approved initial migration' }
+if ($migrateCommand -notmatch 'prisma migrate deploy') { throw 'migrate service must run prisma migrate deploy' }
+if ($migrateCommand.IndexOf('detect_migration_baseline.js') -gt $migrateCommand.IndexOf('prisma migrate deploy')) { throw 'schema detection must happen before migration deployment' }
 if ($config.services.migrate.depends_on.postgres.condition -ne 'service_healthy') { throw 'migrate must wait for a healthy Postgres' }
 if ($config.services.migrate.restart -ne 'no') { throw 'migrate must be a one-shot service' }
 
@@ -48,6 +54,13 @@ if ($backendHealth[0] -ne 'CMD' -or $backendHealth[1] -ne 'node') { throw 'backe
 $frontend = $config.services.frontend
 if ($frontend.image -ne 'standalone/frontend:latest') { throw 'frontend image must be standalone/frontend:latest' }
 if ($frontend.environment.BACKEND_API_URL -ne 'http://backend:3001') { throw 'frontend must proxy to the compose backend' }
+if ($frontend.environment.PASSWORD_RESET_MODE -ne 'disabled') { throw 'standalone frontend must default password reset to disabled' }
+if ($frontend.environment.DISABLE_PUBLIC_REGISTER -ne 'false') { throw 'frontend must receive the shared public-registration mode' }
+if ($frontend.environment.SESSION_COOKIE_SECURE -ne 'false') { throw 'local standalone HTTP must explicitly disable Secure session cookies' }
+if ([int]$frontend.environment.FRONTEND_TRUST_PROXY_HOPS -ne 0) { throw 'frontend trusted proxy hops must default to zero' }
+if ($null -eq $frontend.environment.TURNSTILE_SITE_KEY) { throw 'frontend must receive an explicit Turnstile site-key mapping' }
+if ($config.services.backend.environment.PASSWORD_RESET_MODE -ne 'disabled') { throw 'standalone backend must default password reset to disabled' }
+if ($config.services.backend.environment.DISABLE_PUBLIC_REGISTER -ne $frontend.environment.DISABLE_PUBLIC_REGISTER) { throw 'frontend and backend registration modes must match' }
 if ($frontend.environment.HOSTNAME -ne '0.0.0.0') { throw 'frontend must bind the standalone Next.js server to all interfaces' }
 if ($frontend.depends_on.backend.condition -ne 'service_healthy') { throw 'frontend must wait for a healthy backend' }
 $frontendHealth = @($frontend.healthcheck.test)

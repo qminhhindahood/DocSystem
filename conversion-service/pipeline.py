@@ -20,11 +20,13 @@ from render.docx_builder import DocxBlockBuilder
 from rules.rule_engine import RuleEngine
 from schema.blocks import Block, blocks_to_dicts, parse_blocks
 from schema.validator import validate_chunk
-from structuring.admin_zones import build_admin_header, build_signature
+from structuring.admin_zones import ZoneBuildResult, build_admin_header, build_signature
 from structuring.classifier import Classifier, LineInfo
 from structuring.tables import DetectedTable, extract_accepted_tables
-from structuring.zones import extract_lines, partition_zones
-from triage.triage import DIGITAL_TEXT, SCANNED, TABLE_HEAVY, triage_page
+from structuring.zones import PageZones, extract_lines, partition_zones
+from legacy.decode import decode_best, decode_tcvn3, decode_vni
+from fidelity import ledger_for_docx
+from triage.triage import DIGITAL_TEXT, LEGACY_TEXT, SCANNED, TABLE_HEAVY, triage_page
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,7 @@ class ConversionReport:
     extracted_chars: int = 0                                    # text-layer chars seen
     output_chars: int = 0                                       # content chars emitted
     coverage: float = 0.0                                       # output/extracted ratio
+    fidelity_ledger: Optional[dict] = None                       # tier-1 verbatim ledger (ticket 05)
 
 
 def _extract_text_page_lines(page, page_number: int) -> list[LineInfo]:
@@ -87,6 +90,7 @@ def _extract_text_page_lines(page, page_number: int) -> list[LineInfo]:
                 text=text, size=size, bold=bold, italic=italic,
                 centered=centered, indented=indented,
                 page=page_number, y=y0, y1=y1, x0=x0, x1=x1,
+                page_width=page.rect.width, page_height=page.rect.height,
             ))
     lines.sort(key=lambda l: l.y)
     return lines
@@ -184,6 +188,27 @@ def _line_in_table(line: LineInfo, table: DetectedTable) -> bool:
     return x0 <= x <= x1 and y0 <= y <= y1
 
 
+def restore_unconsumed_zones(
+    zones: PageZones,
+    header: Optional[ZoneBuildResult],
+    signature: Optional[ZoneBuildResult],
+) -> list[LineInfo]:
+    """Return body plus every zone line not represented by a recognized block."""
+    consumed = set(header.consumed_line_ids if header else ())
+    consumed.update(signature.consumed_line_ids if signature else ())
+    restored = [
+        line
+        for line in [*zones.header, *zones.body, *zones.signature]
+        if id(line) not in consumed
+    ]
+    restored.sort(key=lambda line: (
+        getattr(line, "page", zones.page),
+        getattr(line, "y", getattr(line, "y0", 0.0)),
+        getattr(line, "x0", 0.0),
+    ))
+    return restored
+
+
 def _structure_body_with_tables(
     classifier: Classifier,
     body_lines: list[LineInfo],
@@ -232,6 +257,10 @@ def convert_pdf(pdf_path: str, out_path: str,
         sig_candidates: dict[int, Block] = {}
         scanned_pages: list[int] = []
         classifier = Classifier()
+        # Tier-1 fidelity ledger inputs (ticket 05): extracted text of
+        # text-bearing pages (decoded text for LEGACY_TEXT). Scanned pages
+        # are excluded by design — they carry no source text to compare.
+        ledger_text_parts: list[str] = []
 
         # 2. Triage + 3. Extract/Structure (per page)
         for idx in range(len(doc)):
@@ -244,22 +273,30 @@ def convert_pdf(pdf_path: str, out_path: str,
             if ptype == DIGITAL_TEXT:
                 lines = _extract_text_page_lines(page, page_no)
                 report.extracted_chars += sum(len(l.text) for l in lines)
+                ledger_text_parts.extend(l.text for l in lines)
                 zones = partition_zones(lines, page_no, page.rect.width, page.rect.height)
                 # Page-1 header zone -> AdminHeaderBlock (Quốc hiệu, tiêu ngữ,
                 # cơ quan ban hành, số/KH, địa danh - ngày). Previously these
                 # mandatory Decree-30 components were silently discarded.
+                header_result = None
                 if page_no == 1:
-                    hdr = build_admin_header(zones.header, page_no, page.rect.width)
-                    if hdr is not None:
-                        all_blocks.append(hdr)
+                    header_result = build_admin_header(
+                        zones.header, page_no, page.rect.width
+                    )
+                    if header_result.block is not None:
+                        all_blocks.append(header_result.block)
                 # Signature zone -> SignatureBlock (Nơi nhận + chữ ký), kept
                 # for the LAST page that carries one (multi-page docs sign at
                 # the end; earlier bottom zones are usually footers).
-                sig = build_signature(zones.signature, page_no, page.rect.width)
-                if sig is not None:
-                    sig_candidates[page_no] = sig
+                signature_result = build_signature(
+                    zones.signature, page_no, page.rect.width
+                )
+                if signature_result.block is not None:
+                    sig_candidates[page_no] = signature_result.block
                 # body lines through the 4-stage cascade
-                blocks = classifier.structure(zones.body)
+                blocks = classifier.structure(restore_unconsumed_zones(
+                    zones, header_result, signature_result
+                ))
                 for b in blocks:
                     if getattr(b, "page", None) is None:
                         b.page = page_no
@@ -268,17 +305,26 @@ def convert_pdf(pdf_path: str, out_path: str,
                 # Primary: find_tables (free). Quality gate -> text fallback.
                 lines = _extract_text_page_lines(page, page_no)
                 report.extracted_chars += sum(len(l.text) for l in lines)
+                ledger_text_parts.extend(l.text for l in lines)
                 zones = partition_zones(lines, page_no, page.rect.width, page.rect.height)
+                header_result = None
                 if page_no == 1:
-                    hdr = build_admin_header(zones.header, page_no, page.rect.width)
-                    if hdr is not None:
-                        all_blocks.append(hdr)
-                sig = build_signature(zones.signature, page_no, page.rect.width)
-                if sig is not None:
-                    sig_candidates[page_no] = sig
+                    header_result = build_admin_header(
+                        zones.header, page_no, page.rect.width
+                    )
+                    if header_result.block is not None:
+                        all_blocks.append(header_result.block)
+                signature_result = build_signature(
+                    zones.signature, page_no, page.rect.width
+                )
+                if signature_result.block is not None:
+                    sig_candidates[page_no] = signature_result.block
                 tables, rejected_tables = extract_accepted_tables(page, page_no)
                 blocks = _structure_body_with_tables(
-                    classifier, zones.body, tables, page_no
+                    classifier,
+                    restore_unconsumed_zones(zones, header_result, signature_result),
+                    tables,
+                    page_no,
                 )
                 all_blocks.extend(blocks)
                 if rejected_tables:
@@ -287,6 +333,46 @@ def convert_pdf(pdf_path: str, out_path: str,
                         f"Trang {page_no}: {rejected_tables} bảng không đạt ngưỡng "
                         "chất lượng; đã dùng văn bản dự phòng."
                     )
+            elif ptype == LEGACY_TEXT:
+                # TCVN3/VNI bytes without ToUnicode CMap (ticket 04). The
+                # standard tables decode them losslessly — OCR never is.
+                # Decode per line so geometry (positions, sizes) is kept and
+                # zone partitioning works on healthy text; decode_best picks
+                # the encoding that re-encodes byte-identically (lossless
+                # proof). Fallback if per-line decoding can't reproduce the
+                # page: treat as scanned (honest degradation, never fake
+                # digital).
+                page_text = page.get_text()
+                best = decode_best(page_text)
+                if best is None:
+                    scanned_pages.append(page_no)
+                    continue
+                decoder = decode_tcvn3 if best.encoding == "TCVN3" else decode_vni
+                lines = _extract_text_page_lines(page, page_no)
+                for line in lines:
+                    line.text = decoder(line.text).text
+                report.extracted_chars += sum(len(l.text) for l in lines)
+                ledger_text_parts.extend(l.text for l in lines)
+                zones = partition_zones(lines, page_no, page.rect.width, page.rect.height)
+                header_result = None
+                if page_no == 1:
+                    header_result = build_admin_header(
+                        zones.header, page_no, page.rect.width
+                    )
+                    if header_result.block is not None:
+                        all_blocks.append(header_result.block)
+                signature_result = build_signature(
+                    zones.signature, page_no, page.rect.width
+                )
+                if signature_result.block is not None:
+                    sig_candidates[page_no] = signature_result.block
+                blocks = classifier.structure(restore_unconsumed_zones(
+                    zones, header_result, signature_result
+                ))
+                for b in blocks:
+                    if getattr(b, "page", None) is None:
+                        b.page = page_no
+                all_blocks.extend(blocks)
             else:  # SCANNED
                 # Gemini vision contract (P1). Collected here, transcribed in
                 # one batched pass after the loop when the user injected a
@@ -339,6 +425,20 @@ def convert_pdf(pdf_path: str, out_path: str,
         # extracted. Empty output on a non-empty text layer is a hard failure,
         # not a perfect score.
         report.output_chars = _content_chars(all_blocks)
+        # Tier-1 fidelity ledger (ticket 05): verbatim guarantee on the
+        # text paths (DIGITAL_TEXT + TABLE_HEAVY + LEGACY_TEXT); scanned
+        # pages excluded (no source text) — a scanned-only job reports no
+        # fidelity number, only confidence.
+        if ledger_text_parts:
+            led = ledger_for_docx(" ".join(ledger_text_parts), out_path)
+            report.fidelity_ledger = led.to_payload()
+            if led.fidelity < config.FIDELITY_DRIFT_THRESHOLD and report.status != "failed":
+                report.status = "completed_with_warnings"
+                report.warnings.append(
+                    f"Độ nguyên văn nội dung là {led.fidelity:.1%}, thấp hơn "
+                    f"ngưỡng {config.FIDELITY_DRIFT_THRESHOLD:.0%} — xem phiếu "
+                    "so sánh ký tự trong báo cáo."
+                )
         if report.extracted_chars > 0:
             report.coverage = min(1.0, report.output_chars / report.extracted_chars)
         elif report.output_chars > 0:

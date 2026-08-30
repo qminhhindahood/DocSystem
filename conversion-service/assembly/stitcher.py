@@ -90,25 +90,41 @@ def fill_scanned_src(blocks: list[Block], doc, media_dir, page_index_map: dict[i
 # ─── running header/footer strip ──────────────────────────────────────────────
 
 def strip_running_headers(blocks: list[Block]) -> list[Block]:
-    """Remove paragraph text repeated across >= 2 pages (running headers/
-    footers) and bare page numbers."""
-    # count identical paragraph texts across distinct pages
-    seen: dict[str, set[int]] = {}
+    """Remove repeated margin text and margin page numbers, never body text."""
+    seen: dict[tuple[str, str], set[int]] = {}
     for b in blocks:
         if isinstance(b, ParagraphBlock):
-            t = (b.text or "").strip()
-            if t:
-                seen.setdefault(t, set()).add(b.page or 0)
-    repeated = {t for t, pages in seen.items() if len(pages) >= 2}
+            text = _normalized_text(b.text or "")
+            band = _margin_band(b)
+            if text and band is not None:
+                seen.setdefault((text, band), set()).add(b.page or 0)
+    repeated = {key for key, pages in seen.items() if len(pages) >= 2}
 
     out: list[Block] = []
     for b in blocks:
         if isinstance(b, ParagraphBlock):
             t = (b.text or "").strip()
-            if t in repeated or _PAGE_NUMBER_RE.match(t):
+            band = _margin_band(b)
+            key = (_normalized_text(t), band) if band is not None else None
+            if key in repeated or (band is not None and _PAGE_NUMBER_RE.match(t)):
                 continue
         out.append(b)
     return out
+
+
+def _normalized_text(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def _margin_band(block: ParagraphBlock) -> Optional[str]:
+    if block.bbox is None:
+        return None
+    _x0, y0, _x1, y1 = block.bbox
+    if y1 <= 120:
+        return "top"
+    if y0 >= 880:
+        return "bottom"
+    return None
 
 
 # ─── dangling clause join ─────────────────────────────────────────────────────
@@ -147,6 +163,31 @@ def _table_cols(t: TableBlock) -> int:
     return max(sum(c.colspan for c in row) for row in rows)
 
 
+def _table_headers(table: TableBlock) -> Optional[tuple[tuple[str, ...], ...]]:
+    if not table.headers:
+        return None
+    return tuple(
+        tuple(_normalized_text(cell.text) for cell in row)
+        for row in table.headers
+    )
+
+
+def _is_table_continuation(previous: TableBlock, current: TableBlock) -> bool:
+    if (previous.page or 0) + 1 != (current.page or 0):
+        return False
+    if _table_cols(previous) == 0 or _table_cols(previous) != _table_cols(current):
+        return False
+    if previous.bbox is None or current.bbox is None:
+        return False
+    if previous.bbox[3] < 850 or current.bbox[1] > 150:
+        return False
+    previous_headers = _table_headers(previous)
+    current_headers = _table_headers(current)
+    if previous_headers is None:
+        return False
+    return current_headers is None or current_headers == previous_headers
+
+
 def merge_split_tables(blocks: list[Block]) -> list[Block]:
     """Merge tables split across consecutive pages when column counts match."""
     out: list[Block] = []
@@ -155,13 +196,15 @@ def merge_split_tables(blocks: list[Block]) -> list[Block]:
             out
             and isinstance(b, TableBlock)
             and isinstance(out[-1], TableBlock)
-            and (out[-1].page or 0) + 1 == (b.page or 0)
-            and _table_cols(out[-1]) == _table_cols(b)
+            and _is_table_continuation(out[-1], b)
         ):
             prev = out[-1]
             # continuation: append rows (drop repeated header if identical)
             prev.rows.extend(b.rows)
             prev.confidence = min(prev.confidence, b.confidence)
+            # A merged block spans pages and no longer has one truthful bbox.
+            # Clearing it prevents an unsupported third-page merge.
+            prev.bbox = None
             continue
         out.append(b)
     return out

@@ -44,6 +44,14 @@ describe('BYOK vision settings dialog', () => {
     expect(screen.queryByRole('option', { name: 'OpenRouter' })).toBeNull();
   });
 
+  it('keeps the icon-only close action at least 44 pixels square', async () => {
+    const user = userEvent.setup();
+    render(<LLMSettingsDialog />);
+    await user.click(screen.getByRole('button', { name: 'Cấu hình khóa API' }));
+
+    expect(await screen.findByLabelText('Đóng cài đặt')).toHaveClass('h-11', 'w-11');
+  });
+
   it('does not mark an unchanged new-user form dirty after a Strict Mode abort', async () => {
     let resolveSecond: ((value: { success: true; config: null }) => void) | undefined;
     getLLM

@@ -29,7 +29,9 @@ describe('RootLayout', () => {
   it('uses localized default browser metadata', async () => {
     const { metadata } = await import('@/app/layout');
 
-    expect(metadata.title).toBe('DocAI — Soạn thảo văn bản hành chính');
-    expect(metadata.description).toBe('Soạn thảo, quản lý và tra cứu văn bản hành chính có căn cứ.');
+    expect(metadata.title).toBe('DocAI — Chuyển đổi PDF sang DOCX');
+    expect(metadata.description).toBe(
+      'Chuyển đổi PDF sang DOCX theo Nghị định 30, kèm báo cáo độ tin cậy và độ bao phủ.',
+    );
   });
 });

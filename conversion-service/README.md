@@ -76,7 +76,7 @@ python -m venv .venv
 # eval harness (CER, block-type F1, seal recall, hallucination rate)
 .\.venv\Scripts\python.exe -m eval.run_eval --fixture eval\fixtures\quyet_dinh.json
 
-# typography drift guard (Python rule engine vs TS ROLE_RULES)
+# typography drift guard (canonical JSON + Python rule engine)
 .\.venv\Scripts\python.exe conversion-service\scripts\check_typography_sync.py
 ```
 

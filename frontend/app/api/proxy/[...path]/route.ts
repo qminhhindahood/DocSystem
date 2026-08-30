@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { enforceMutationOrigin } from '@/lib/server/request-security';
-import { forwardToBackend } from '@/lib/server/backend';
-
-const BACKEND_URL = (
-  process.env.BACKEND_API_URL || 'http://localhost:3001'
-).replace(/\/+$/, '');
+import { backendUrl, forwardToBackend } from '@/lib/server/backend';
 
 const HOP_BY_HOP = new Set([
   'host', 'connection', 'keep-alive', 'transfer-encoding', 'upgrade',
@@ -53,7 +49,7 @@ async function handler(req: NextRequest) {
   if (originError) return originError;
 
   const search = req.nextUrl.search;
-  const target = `${BACKEND_URL}/api/${pathSegments}${search}`;
+  const target = `${backendUrl()}/api/${pathSegments}${search}`;
 
   const sessionToken = req.cookies.get('docai_session')?.value;
 

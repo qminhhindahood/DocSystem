@@ -3,11 +3,13 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { motion } from 'motion/react';
 import { cn } from '@/components/lib/cn';
 import { NAV_ROUTES } from '@/lib/constants/routes';
 import { useTheme } from '@/lib/theme';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { LLMSettingsDialog } from '@/components/settings/LLMSettingsDialog';
+import { springSnappy } from '@/lib/motion';
 import {
   FileOutput,
   X,
@@ -144,15 +146,23 @@ export function Sidebar({ open, onOpenChange, triggerRef, className }: SidebarPr
                   href={item.href}
                   aria-current={isActive ? 'page' : undefined}
                   className={cn(
-                    'flex min-h-11 items-center gap-3 rounded-control px-3 py-2 text-control transition-colors duration-fast',
+                    'relative flex min-h-11 items-center gap-3 rounded-control px-3 py-2 text-control transition-colors duration-fast',
                     isActive
-                      ? 'bg-action-tint font-semibold text-action'
+                      ? 'font-semibold text-action'
                       : 'text-text-secondary hover:bg-surface-strong hover:text-text-primary',
                   )}
                   onClick={() => onOpenChange(false)}
                 >
-                  <item.icon className="h-5 w-5 flex-shrink-0" />
-                  <span className="truncate">{item.label}</span>
+                  {isActive && (
+                    <motion.span
+                      layoutId="sidebar-active-pill"
+                      transition={springSnappy}
+                      aria-hidden="true"
+                      className="absolute inset-0 rounded-control bg-action-tint"
+                    />
+                  )}
+                  <item.icon className="relative z-base h-5 w-5 flex-shrink-0" />
+                  <span className="relative z-base truncate">{item.label}</span>
                 </Link>
               );
             })}

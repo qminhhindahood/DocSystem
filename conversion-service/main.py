@@ -49,6 +49,12 @@ from job_store import JobStore
 from metrics import METRICS
 from pipeline import convert_pdf
 from quota import QuotaService
+from refund_journal import (
+    PendingQuotaRefund,
+    delete_pending_refund,
+    load_pending_refunds,
+    save_pending_refund,
+)
 from triage.triage import SCANNED, triage_page
 from user_errors import UNEXPECTED_CONVERSION_ERROR, VISION_AUTH_FAILED_DETAIL
 from vision.gemini_contract import VisionAuthError
@@ -61,10 +67,12 @@ async def _artifact_cleanup_loop() -> None:
     while True:
         await asyncio.sleep(config.FILE_CLEANUP_INTERVAL_S)
         await asyncio.to_thread(cleanup_expired_artifacts)
+        _resume_pending_refunds()
 
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    _resume_pending_refunds()
     cleanup_task = asyncio.create_task(_artifact_cleanup_loop())
     try:
         yield
@@ -72,6 +80,11 @@ async def _lifespan(_app: FastAPI):
         cleanup_task.cancel()
         with suppress(asyncio.CancelledError):
             await cleanup_task
+        retry_tasks = list(_REFUND_RETRY_TASKS.values())
+        for task in retry_tasks:
+            task.cancel()
+        if retry_tasks:
+            await asyncio.gather(*retry_tasks, return_exceptions=True)
 
 
 app = FastAPI(
@@ -85,7 +98,7 @@ QUOTA = QuotaService(redis_client=STORE.redis_client)
 # In-process fallback registry (dev mode only)
 _LOCAL_JOBS: dict[str, dict[str, Any]] = {}
 _LOCAL_JOB_CAP = 200
-_PENDING_REFUNDS: dict[str, AdmittedJob] = {}
+_PENDING_REFUNDS: dict[str, PendingQuotaRefund] = {}
 _REFUND_RETRY_TASKS: dict[str, asyncio.Task[None]] = {}
 
 
@@ -155,50 +168,74 @@ def _record_job_metrics(report) -> None:
     METRICS.observe_duration(report.timings.get("total_s", 0.0))
     METRICS.observe_confidence(report.confidence)
     METRICS.record_outcome(report.status)
+    # Tier-1 drift hook (ticket 05): silent fidelity drift on a text-path
+    # job is a quality failure — the existing failure counters catch it.
+    ledger = report.fidelity_ledger or {}
+    if ledger.get("fidelity", 1.0) < config.FIDELITY_DRIFT_THRESHOLD:
+        METRICS.inc("conversion_jobs_total", status="failed")
+        METRICS.record_outcome("failed")
 
 
-def _attempt_job_refund(job: AdmittedJob) -> bool:
-    """Attempt the exact once-only refund; False means it must be retried."""
+def _pending_refund(job: AdmittedJob) -> PendingQuotaRefund | None:
     if not job.user_id or not job.quota_key:
+        return None
+    return PendingQuotaRefund(
+        job_id=job.job_id,
+        user_id=job.user_id,
+        quota_key=job.quota_key,
+    )
+
+
+def _attempt_job_refund(refund: PendingQuotaRefund | None) -> bool:
+    """Attempt the exact once-only refund; False means it must be retried."""
+    if refund is None:
         return True
-    refund_key = f"{config.JOB_STATE_PREFIX}{job.job_id}:refunded"
+    refund_key = f"{config.JOB_STATE_PREFIX}{refund.job_id}:refunded"
     try:
         QUOTA.refund_charge_once(
             refund_key,
-            job.quota_key,
+            refund.quota_key,
             ttl_s=config.JOB_STATE_TTL_S,
         )
     except Exception as error:  # noqa: BLE001
-        logger.warning("quota refund failed for local job %s: %s", job.job_id, error)
+        logger.warning("quota refund failed for local job %s: %s", refund.job_id, error)
         return False
     return True
 
 
-async def _retry_job_refund(job: AdmittedJob) -> None:
+async def _retry_job_refund(refund: PendingQuotaRefund) -> None:
     """Keep a failed local/dispatch refund live until the exact charge clears."""
     try:
-        while job.job_id in _PENDING_REFUNDS:
+        while refund.job_id in _PENDING_REFUNDS:
             await asyncio.sleep(config.QUOTA_REFUND_RETRY_DELAY_S)
-            if not _attempt_job_refund(job):
+            if not _attempt_job_refund(refund):
                 continue
-            _PENDING_REFUNDS.pop(job.job_id, None)
-            if job.job_id in _LOCAL_JOBS:
+            _PENDING_REFUNDS.pop(refund.job_id, None)
+            delete_pending_refund(refund.job_id)
+            if refund.job_id in _LOCAL_JOBS:
                 _local_job(
-                    job.job_id,
+                    refund.job_id,
                     quotaRefunded=True,
                     quotaRefundPending=False,
                 )
     finally:
-        _REFUND_RETRY_TASKS.pop(job.job_id, None)
+        _REFUND_RETRY_TASKS.pop(refund.job_id, None)
 
 
-def _schedule_job_refund_retry(job: AdmittedJob) -> None:
-    _PENDING_REFUNDS[job.job_id] = job
-    task = _REFUND_RETRY_TASKS.get(job.job_id)
+def _schedule_job_refund_retry(refund: PendingQuotaRefund) -> None:
+    save_pending_refund(refund)
+    _PENDING_REFUNDS[refund.job_id] = refund
+    task = _REFUND_RETRY_TASKS.get(refund.job_id)
     if task is not None and not task.done():
         return
-    task = asyncio.create_task(_retry_job_refund(job))
-    _REFUND_RETRY_TASKS[job.job_id] = task
+    task = asyncio.create_task(_retry_job_refund(refund))
+    _REFUND_RETRY_TASKS[refund.job_id] = task
+
+
+def _resume_pending_refunds() -> None:
+    for refund in load_pending_refunds():
+        if refund.job_id not in _REFUND_RETRY_TASKS:
+            _schedule_job_refund_retry(refund)
 
 
 def _refund_local_once(job: AdmittedJob) -> None:
@@ -206,7 +243,10 @@ def _refund_local_once(job: AdmittedJob) -> None:
     state = _LOCAL_JOBS.get(job.job_id) or {}
     if state.get("quotaRefunded"):
         return
-    if _attempt_job_refund(job):
+    refund = _pending_refund(job)
+    if _attempt_job_refund(refund):
+        if refund is not None:
+            delete_pending_refund(refund.job_id)
         _local_job(
             job.job_id,
             quotaRefunded=True,
@@ -214,7 +254,8 @@ def _refund_local_once(job: AdmittedJob) -> None:
         )
         return
     _local_job(job.job_id, quotaRefundPending=True)
-    _schedule_job_refund_retry(job)
+    if refund is not None:
+        _schedule_job_refund_retry(refund)
 
 
 async def _run_job_in_process(job: AdmittedJob) -> None:
@@ -313,8 +354,9 @@ def _dispatch_job(job: AdmittedJob) -> str:
                 cleanup_error,
             )
         _LOCAL_JOBS.pop(job.job_id, None)
-        if not _attempt_job_refund(job):
-            _schedule_job_refund_retry(job)
+        refund = _pending_refund(job)
+        if not _attempt_job_refund(refund) and refund is not None:
+            _schedule_job_refund_retry(refund)
         delete_source(job.pdf_path)
         raise AdmissionError(500, UNEXPECTED_CONVERSION_ERROR) from error
 
@@ -378,7 +420,9 @@ async def convert(
     """Accept a PDF upload, start a conversion job, return its jobId."""
     vision_config = _parse_vision(vision)
     try:
-        job = _admit_upload(file, x_user_id, vision_config)
+        # Admission does file I/O, password checks, and page triage; keep it
+        # off the event loop so status reads stay responsive under upload load.
+        job = await asyncio.to_thread(_admit_upload, file, x_user_id, vision_config)
         mode = _dispatch_job(job)
     except (IntakeError, AdmissionError) as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail)
@@ -456,6 +500,7 @@ async def convert_report(job_id: str) -> dict[str, Any]:
         "pageTypes": report.get("page_types", {}),
         "warnings": report.get("warnings", []),
         "timings": report.get("timings", {}),
+        "fidelityLedger": report.get("fidelity_ledger"),
     }
 
 
@@ -479,7 +524,9 @@ async def convert_bulk(
     results: list[dict[str, Any]] = []
     for file in files:
         try:
-            job = _admit_upload(file, x_user_id, vision_config)
+            # Ordered, bounded admission that yields the event loop between
+            # files (each await returns control before the next file starts).
+            job = await asyncio.to_thread(_admit_upload, file, x_user_id, vision_config)
             _dispatch_job(job)
         except (IntakeError, AdmissionError) as error:
             results.append({

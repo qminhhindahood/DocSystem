@@ -29,7 +29,13 @@ This repo is a standalone fork whose product surface is PDF→DOCX conversion pl
 
 ## Decision
 
-Replace the entire migration history with a single clean init migration that creates only the User and PasswordResetToken models. Swap the Postgres image from the pgvector variant to plain postgres:15-alpine, drop the vector extension from the init script, and delete the pgvector/HNSW boot wiring from the backend. The compose migrate service applies the one migration.
+Replace the entire migration history with a single clean init migration that
+creates `User`, `PasswordResetToken`, and the owner-scoped `UserLLMConfig`
+required for Gemini BYOK settings. Swap the Postgres image from the pgvector
+variant to plain postgres:15-alpine, drop the vector extension from the init
+script, and delete the pgvector/HNSW boot wiring from the backend. The Compose
+migrate service applies the one migration, baselining only a behaviorally
+compatible pre-Prisma schema.
 
 ## Consequences
 

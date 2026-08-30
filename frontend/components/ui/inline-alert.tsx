@@ -18,10 +18,10 @@ const ICONS: Record<InlineAlertProps['variant'], React.ComponentType<{ className
 };
 
 const SURFACES: Record<InlineAlertProps['variant'], string> = {
-  info: 'border-info/35 bg-info-surface',
-  success: 'border-success/35 bg-success-surface',
-  warning: 'border-warning/35 bg-warning-surface',
-  error: 'border-error/35 bg-error-surface',
+  info: 'border-info-border bg-info-surface',
+  success: 'border-success-border bg-success-surface',
+  warning: 'border-warning-border bg-warning-surface',
+  error: 'border-error-border bg-error-surface',
 };
 
 const ICON_TONES: Record<InlineAlertProps['variant'], string> = {

@@ -34,6 +34,14 @@ beforeEach(() => {
 });
 
 describe('scanned-PDF 422 deep link to API key settings', () => {
+  it('keeps every dialog action at least 44 pixels high', () => {
+    render(<Harness />);
+
+    expect(screen.getByRole('button', { name: 'Đóng' })).toHaveClass('h-11', 'w-11');
+    expect(screen.getByRole('button', { name: 'Hủy' })).toHaveClass('min-h-11');
+    expect(screen.getByRole('button', { name: 'Chuyển đổi (0)' })).toHaveClass('min-h-11');
+  });
+
   it('shows the settings deep-link button after a 422 rejection', async () => {
     const { ApiError } = await import('@/lib/convert-api');
     submitConversion.mockRejectedValue(new (ApiError as any)('Tài liệu có trang quét (scanned) nhưng chưa có khóa API Google Gemini.', 422));

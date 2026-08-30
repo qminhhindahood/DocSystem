@@ -11,7 +11,7 @@ const contentSecurityPolicy = [
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   "connect-src 'self' https://challenges.cloudflare.com",
-  "frame-src https://challenges.cloudflare.com",
+  "frame-src 'self' blob: https://challenges.cloudflare.com",
   "worker-src 'self' blob:",
   "child-src 'self' blob:",
   "media-src 'self' data: blob:",

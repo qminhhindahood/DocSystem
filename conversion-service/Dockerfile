@@ -9,11 +9,32 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Service code
+# Patch OS packages at build time (Debian pushes security fixes continuously);
+# the base snapshot lags. perl-base is Debian-required but unused by this
+# Python runtime — removed to shrink the Trivy OS-CVE surface.
+USER root
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get remove -y --allow-remove-essential perl-base \
+    && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
+# Service code — runtime inputs only. The root .dockerignore keeps the
+# repo-root context clean; these explicit copies guarantee that tests/,
+# eval/, scripts/, .venv and work/ never ship even if the context drifts.
 COPY conversion-service/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY conversion-service/ /app/
+COPY conversion-service/*.py /app/
+COPY conversion-service/assembly/ /app/assembly/
+COPY conversion-service/ingest/ /app/ingest/
+COPY conversion-service/render/ /app/render/
+COPY conversion-service/rules/ /app/rules/
+COPY conversion-service/schema/ /app/schema/
+COPY conversion-service/structuring/ /app/structuring/
+COPY conversion-service/triage/ /app/triage/
+# legacy/ is imported by triage (TCVN3/VNI decode path) — without it the
+# container fails at import time and never boots.
+COPY conversion-service/legacy/ /app/legacy/
+COPY conversion-service/vision/ /app/vision/
 # Canonical typography source (single source of truth, plan §8)
 COPY shared/ /shared/
 

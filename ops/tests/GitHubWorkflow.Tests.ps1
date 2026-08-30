@@ -61,6 +61,26 @@ Describe 'GitHub CI workflow contract (standalone)' {
     $script:ciRaw.Contains("exit-code: '1'") | Should -BeTrue
   }
 
+  It 'separates production and development dependency audits' {
+    foreach ($name in @(
+      'Audit backend production dependencies',
+      'Audit backend development dependencies',
+      'Audit frontend production dependencies',
+      'Audit frontend development dependencies'
+    )) {
+      $script:ciRaw | Should -Match ([regex]::Escape("name: $name"))
+    }
+    ($script:ciRaw | Select-String -Pattern 'npm audit --omit=dev --audit-level=high' -AllMatches).Matches.Count | Should -Be 2
+    ($script:ciRaw | Select-String -Pattern 'npm audit --audit-level=high' -AllMatches).Matches.Count | Should -Be 2
+  }
+
+  It 'enforces typography integrity and the offline release render gate' {
+    $script:ciRaw | Should -Match 'name: Verify typography sync'
+    $script:ciRaw | Should -Match 'python scripts/check_typography_sync\.py'
+    $script:ciRaw | Should -Match 'name: Run release render preflight'
+    $script:ciRaw | Should -Match 'python eval/verify_p0a\.py'
+  }
+
   It 'creates the gitignored Compose env file from its safe example' {
     $script:ciRaw | Should -Match 'cp backend/\.env\.example backend/\.env'
   }

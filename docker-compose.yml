@@ -99,9 +99,13 @@ services:
     # node_modules/.bin is added to PATH because the runtime image strips npm/npx.
     command:
       - sh
-      - -c
+      - -ec
       - >
-        export PATH="/app/node_modules/.bin:$$PATH" &&
+        export PATH="/app/node_modules/.bin:$$PATH";
+        baseline_state="$$(node dist/scripts/detect_migration_baseline.js)";
+        if [ "$$baseline_state" = "compatible" ]; then
+          prisma migrate resolve --applied 20260901000000_init_standalone_auth;
+        fi;
         prisma migrate deploy
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${DB_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-ai_docs}?schema=public
@@ -126,6 +130,8 @@ services:
       UPLOAD_DIR: /data/uploads
       ALLOW_STACK_TRACES: ${ALLOW_STACK_TRACES:-false}
       NODE_ENV: ${NODE_ENV:-development}
+      PASSWORD_RESET_MODE: ${PASSWORD_RESET_MODE:-disabled}
+      DISABLE_PUBLIC_REGISTER: ${DISABLE_PUBLIC_REGISTER:-false}
     volumes:
       - uploads_data:/data/uploads
     depends_on:
@@ -166,6 +172,12 @@ services:
       PORT: 3000
       # Server-side proxy target (frontend/app/api/proxy/[...path]/route.ts).
       BACKEND_API_URL: http://backend:3001
+      PASSWORD_RESET_MODE: ${PASSWORD_RESET_MODE:-disabled}
+      # This standalone stack serves local HTTP. Set true only behind HTTPS.
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      FRONTEND_TRUST_PROXY_HOPS: ${FRONTEND_TRUST_PROXY_HOPS:-0}
+      DISABLE_PUBLIC_REGISTER: ${DISABLE_PUBLIC_REGISTER:-false}
     depends_on:
       backend:
         condition: service_healthy

@@ -22,7 +22,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref,
   ) => {
     const baseStyles =
-      'inline-flex min-h-10 items-center justify-center gap-2 font-medium transition-all duration-fast focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-canvas active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100';
+      'inline-flex min-h-11 items-center justify-center gap-2 font-medium transition-all duration-fast focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-canvas active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100';
 
     const variants = {
       primary:
@@ -36,7 +36,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       destructive:
         'rounded-control bg-error px-5 py-2 text-on-action hover:opacity-90 focus-visible:ring-error',
       icon:
-        'w-10 rounded-compact bg-transparent p-0 text-text-secondary hover:bg-surface-strong hover:text-text-primary',
+        'h-11 min-h-11 w-11 min-w-11 rounded-compact bg-transparent p-0 text-text-secondary hover:bg-surface-strong hover:text-text-primary',
     };
 
     const sizes = {
