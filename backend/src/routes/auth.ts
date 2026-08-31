@@ -50,6 +50,12 @@ const LoginSchema = z.object({
   }),
 });
 
+const DeleteAccountSchema = z.object({
+  body: z.object({
+    password: z.string().min(8).max(100),
+  }),
+});
+
 function requireEmailPasswordReset(
   _req: express.Request,
   res: express.Response,
@@ -241,5 +247,39 @@ router.get('/me', userAuthMiddleware, requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Unable to load user profile' });
   }
 });
+
+/**
+ * Permanently delete the authenticated account and its cascade-owned data.
+ * DELETE /api/auth/me
+ */
+router.delete(
+  '/me',
+  userAuthMiddleware,
+  requireAuth,
+  validate(DeleteAccountSchema),
+  async (req, res) => {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: req.user!.userId },
+        select: { id: true, passwordHash: true },
+      });
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      if (!await verifyPassword(req.body.password, user.passwordHash)) {
+        return res.status(401).json({ error: 'Invalid password' });
+      }
+      await prisma.$transaction(async (tx) => {
+        await tx.user.delete({ where: { id: user.id } });
+      });
+      return res.status(204).send();
+    } catch {
+      // Database errors can include connection details. Keep the client and
+      // production logs free of exception text on this destructive endpoint.
+      console.error('Delete account error');
+      return res.status(500).json({ error: 'Unable to delete account' });
+    }
+  },
+);
 
 export default router;

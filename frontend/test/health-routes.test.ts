@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const forwardToBackend = vi.fn();
 vi.mock('@/lib/server/backend', () => ({
@@ -14,6 +14,10 @@ describe('frontend health routes', () => {
     vi.clearAllMocks();
     vi.stubEnv('PASSWORD_RESET_MODE', 'disabled');
     vi.stubEnv('DISABLE_PUBLIC_REGISTER', 'true');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('reports process liveness without calling the backend', async () => {
@@ -53,6 +57,37 @@ describe('frontend health routes', () => {
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ status: 'not_ready' });
     expect(forwardToBackend).not.toHaveBeenCalled();
+  });
+
+  it('rejects open-registration readiness when public support configuration is fake', async () => {
+    vi.stubEnv('DISABLE_PUBLIC_REGISTER', 'false');
+    vi.stubEnv('TURNSTILE_SITE_KEY', 'turnstile-site-key');
+    vi.stubEnv('PUBLIC_OPERATOR_NAME', 'DocAI');
+    vi.stubEnv('PUBLIC_OPERATOR_JURISDICTION', 'Vietnam');
+    vi.stubEnv('PUBLIC_SUPPORT_EMAIL', 'support@example.invalid');
+    vi.stubEnv('PUBLIC_POLICY_EFFECTIVE_DATE', '2026-08-31');
+    forwardToBackend.mockResolvedValue(new Response('{}', { status: 200 }));
+
+    const response = await ready();
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ status: 'not_ready' });
+    expect(forwardToBackend).not.toHaveBeenCalled();
+  });
+
+  it('accepts complete public configuration before checking backend readiness', async () => {
+    vi.stubEnv('DISABLE_PUBLIC_REGISTER', 'false');
+    vi.stubEnv('TURNSTILE_SITE_KEY', 'turnstile-site-key');
+    vi.stubEnv('PUBLIC_OPERATOR_NAME', 'DocAI');
+    vi.stubEnv('PUBLIC_OPERATOR_JURISDICTION', 'Vietnam');
+    vi.stubEnv('PUBLIC_SUPPORT_EMAIL', 'support@docai.example.vn');
+    vi.stubEnv('PUBLIC_POLICY_EFFECTIVE_DATE', '2026-08-31');
+    forwardToBackend.mockResolvedValue(new Response('{}', { status: 200 }));
+
+    const response = await ready();
+
+    expect(response.status).toBe(200);
+    expect(forwardToBackend).toHaveBeenCalledWith('GET', '/ready');
   });
 
   it('rejects readiness when password reset mode is invalid', async () => {

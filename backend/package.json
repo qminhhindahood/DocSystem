@@ -12,6 +12,7 @@
     "deploy:migrate": "prisma migrate deploy",
     "deploy:bootstrap": "node dist/scripts/bootstrap_user.js",
     "deploy:reset-password": "node dist/scripts/reset_operator_password.js",
+    "deploy:users": "node dist/scripts/manage_users.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",

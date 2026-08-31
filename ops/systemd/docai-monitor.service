@@ -1,0 +1,14 @@
+[Unit]
+Description=Publish DocAI health metrics to OCI Monitoring
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/conversion-service-standalone
+EnvironmentFile=/etc/docai-monitor.env
+ExecStart=/opt/conversion-service-standalone/ops/monitoring/publish-oci-metrics.sh
+
+[Install]
+WantedBy=multi-user.target

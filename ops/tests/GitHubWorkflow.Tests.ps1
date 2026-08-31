@@ -16,6 +16,10 @@ Describe 'GitHub CI workflow contract (standalone)' {
     $script:ciRaw | Should -Match '(?m)^on:\s*\r?\n\s+pull_request:'
   }
 
+  It 'runs the same CI when main changes' {
+    $script:ciRaw | Should -Match '(?m)^  push:\s*\r?\n    branches:\s*\[main\]'
+  }
+
   It 'keeps exactly the standalone product jobs' {
     foreach ($job in @('backend', 'frontend', 'conversion', 'containers', 'repository-contracts')) {
       $script:ciRaw | Should -Match "(?m)^  $job\:"

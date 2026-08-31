@@ -53,6 +53,15 @@ class _MemoryStore:
 class JobStore:
     """Job state store: strict Redis for workers, fallback for local API use."""
 
+    _BOUNDED_ENQUEUE_SCRIPT = """
+local depth = redis.call('LLEN', KEYS[1])
+if depth >= tonumber(ARGV[2]) then
+  return 0
+end
+redis.call('LPUSH', KEYS[1], ARGV[1])
+return 1
+""".strip()
+
     def __init__(
         self,
         redis_url: Optional[str] = None,
@@ -200,6 +209,25 @@ class JobStore:
         if queued:
             return
         raise RuntimeError("Redis is required for queue mode")
+
+    def enqueue_bounded(self, job: dict[str, Any], max_depth: int) -> bool:
+        """Atomically enqueue one job unless the pending queue is at capacity."""
+        if max_depth <= 0:
+            raise ValueError("max_depth must be positive")
+        payload = json.dumps(job, ensure_ascii=False)
+        queued, accepted = self._redis_call(
+            "bounded enqueue",
+            lambda client: client.eval(
+                self._BOUNDED_ENQUEUE_SCRIPT,
+                1,
+                config.CONVERSION_QUEUE_KEY,
+                payload,
+                max_depth,
+            ),
+        )
+        if not queued:
+            raise RuntimeError("Redis is required for queue mode")
+        return int(accepted or 0) == 1
 
     def dequeue(self, timeout: int = config.QUEUE_POLL_TIMEOUT_S) -> Optional[dict[str, Any]]:
         """Atomically pop a job from the queue into the processing list.

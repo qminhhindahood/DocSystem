@@ -4,7 +4,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { AnimatePresence, motion } from 'motion/react';
 import { Button } from '@/components/ui/button';
-import { ApiError, AuthError, submitConversion, submitBulkConversion } from '@/lib/convert-api';
+import { AuthError, submitConversionsIndividually } from '@/lib/convert-api';
 import { OPEN_LLM_SETTINGS_EVENT } from '@/components/settings/LLMSettingsDialog';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { springSnappy, listItem } from '@/lib/motion';
@@ -77,36 +77,19 @@ export function ConvertUploadDialog({ open, onOpenChange, onSubmitted }: Convert
     let visionNeeded = false;
     try {
       const submitted = files;
-      let jobs: SubmittedJob[] = [];
-      let failedNames: Set<string> | null = null;
-      const first = submitted[0];
-      if (submitted.length === 1 && first) {
-        const { jobId } = await submitConversion(first);
-        jobs = [{ jobId, filename: first.name, file: first }];
-      } else {
-        const result = await submitBulkConversion(files);
-        for (const j of result.jobs) {
-          if (j.jobId === null) continue;
-          const file = submitted.find((f) => f.name === j.filename);
-          if (!file) continue;
-          jobs.push({ jobId: j.jobId, filename: j.filename, file });
-        }
-        const failed = result.jobs.filter((j) => j.error);
-        if (failed.length > 0) {
-          setError(failed.map((f) => `${f.filename}: ${f.error}`).join('; '));
-          failedNames = new Set(failed.map((f) => f.filename));
-          // Bulk surfaces the scanned-no-key case as an inline per-file error.
-          if (failed.some((f) => f.error && f.error.includes('trang quét'))) {
-            visionNeeded = true;
-          }
-        }
-      }
-      if (visionNeeded) {
-        // Keep the dialog open so the deep-link button stays reachable.
-        // Successful jobs are still tracked; only failed files remain for retry.
-        setNeedsVisionConfig(true);
-        const keep = failedNames;
-        if (keep) setFiles((prev) => prev.filter((f) => keep.has(f.name)));
+      const result = await submitConversionsIndividually(submitted);
+      const jobs = result.jobs.map(({ file, jobId }) => ({
+        jobId,
+        filename: file.name,
+        file,
+      }));
+      if (result.failures.length > 0) {
+        setError(result.failures.map(({ file, error }) => (
+          `${file.name}: ${error.message}`
+        )).join('; '));
+        visionNeeded = result.failures.some(({ error }) => error.message.includes('trang quét'));
+        setNeedsVisionConfig(visionNeeded);
+        setFiles(result.failures.map(({ file }) => file));
         if (jobs.length > 0) onSubmitted(jobs);
         return;
       }
@@ -116,8 +99,6 @@ export function ConvertUploadDialog({ open, onOpenChange, onSubmitted }: Convert
     } catch (err) {
       if (err instanceof AuthError) { auth.refresh(); return; }
       setError(err instanceof Error ? err.message : 'Chuyển đổi thất bại');
-      // Single upload: the admission gate rejects scanned-without-key as 422.
-      if (err instanceof ApiError && err.status === 422) setNeedsVisionConfig(true);
     } finally {
       setUploading(false);
     }

@@ -4,16 +4,14 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvertUploadDialog } from '@/components/convert/ConvertUploadDialog';
 
-const submitConversion = vi.fn();
-const submitBulkConversion = vi.fn();
+const submitConversionsIndividually = vi.fn();
 vi.mock('@/lib/convert-api', () => ({
   AuthError: class AuthError extends Error {},
   ApiError: class ApiError extends Error {
     status: number;
     constructor(message: string, status: number) { super(message); this.status = status; }
   },
-  submitConversion: (...args: unknown[]) => submitConversion(...args),
-  submitBulkConversion: (...args: unknown[]) => submitBulkConversion(...args),
+  submitConversionsIndividually: (...args: unknown[]) => submitConversionsIndividually(...args),
 }));
 vi.mock('@/components/auth/AuthProvider', () => ({ useAuth: () => ({ refresh: vi.fn() }) }));
 // Keep the heavy settings tree out of this test; only the event name matters.
@@ -42,14 +40,18 @@ describe('scanned-PDF 422 deep link to API key settings', () => {
     expect(screen.getByRole('button', { name: 'Chuyển đổi (0)' })).toHaveClass('min-h-11');
   });
 
-  it('shows the settings deep-link button after a 422 rejection', async () => {
+  it('shows the settings deep-link button after a scanned-document rejection', async () => {
     const { ApiError } = await import('@/lib/convert-api');
-    submitConversion.mockRejectedValue(new (ApiError as any)('Tài liệu có trang quét (scanned) nhưng chưa có khóa API Google Gemini.', 422));
+    const file = pdfFile();
+    submitConversionsIndividually.mockResolvedValue({
+      jobs: [],
+      failures: [{ index: 0, file, error: new (ApiError as any)('Tài liệu có trang quét (scanned) nhưng chưa có khóa API Google Gemini.', 422) }],
+    });
 
     const user = userEvent.setup();
     render(<Harness />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    await user.upload(input, pdfFile());
+    await user.upload(input, file);
     await user.click(screen.getByRole('button', { name: /Chuyển đổi \(1\)/ }));
 
     const alert = await screen.findByRole('alert');
@@ -57,16 +59,42 @@ describe('scanned-PDF 422 deep link to API key settings', () => {
     expect(screen.getByRole('button', { name: 'Cấu hình khóa API' })).toBeInTheDocument();
   });
 
+  it('does not suggest API-key setup for an unrelated 422 rejection', async () => {
+    const { ApiError } = await import('@/lib/convert-api');
+    const file = pdfFile('protected.pdf');
+    submitConversionsIndividually.mockResolvedValue({
+      jobs: [],
+      failures: [{
+        index: 0,
+        file,
+        error: new (ApiError as any)('PDF được bảo vệ bằng mật khẩu.', 422),
+      }],
+    });
+
+    const user = userEvent.setup();
+    render(<Harness />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, file);
+    await user.click(screen.getByRole('button', { name: /Chuyển đổi \(1\)/ }));
+
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('button', { name: 'Cấu hình khóa API' })).toBeNull();
+  });
+
   it('the deep-link button dispatches the open-llm-settings event', async () => {
     const { ApiError } = await import('@/lib/convert-api');
-    submitConversion.mockRejectedValue(new (ApiError as any)('Tài liệu có trang quét (scanned).', 422));
+    const file = pdfFile();
+    submitConversionsIndividually.mockResolvedValue({
+      jobs: [],
+      failures: [{ index: 0, file, error: new (ApiError as any)('Tài liệu có trang quét (scanned).', 422) }],
+    });
     const listener = vi.fn();
     window.addEventListener('open-llm-settings', listener);
 
     const user = userEvent.setup();
     render(<Harness />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    await user.upload(input, pdfFile());
+    await user.upload(input, file);
     await user.click(screen.getByRole('button', { name: /Chuyển đổi \(1\)/ }));
     await user.click(await screen.findByRole('button', { name: 'Cấu hình khóa API' }));
 
@@ -75,19 +103,22 @@ describe('scanned-PDF 422 deep link to API key settings', () => {
   });
 
   it('keeps the dialog open and shows the deep link for bulk inline scanned errors', async () => {
-    submitBulkConversion.mockResolvedValue({
-      jobs: [
-        { filename: 'a.pdf', jobId: 'job-a', error: null },
-        { filename: 'scan.pdf', jobId: null, error: 'Tài liệu có trang quét (scanned) nhưng chưa có khóa API Google Gemini.' },
-      ],
-      count: 2,
+    const accepted = pdfFile('a.pdf');
+    const rejected = pdfFile('scan.pdf');
+    submitConversionsIndividually.mockResolvedValue({
+      jobs: [{ index: 0, file: accepted, jobId: 'job-a' }],
+      failures: [{
+        index: 1,
+        file: rejected,
+        error: new Error('Tài liệu có trang quét (scanned) nhưng chưa có khóa API Google Gemini.'),
+      }],
     });
     const onSubmitted = vi.fn();
 
     const user = userEvent.setup();
     render(<Harness onSubmitted={onSubmitted} />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    await user.upload(input, [pdfFile('a.pdf'), pdfFile('scan.pdf')]);
+    await user.upload(input, [accepted, rejected]);
     await user.click(screen.getByRole('button', { name: /Chuyển đổi \(2\)/ }));
 
     const alert = await screen.findByRole('alert');
@@ -104,12 +135,16 @@ describe('scanned-PDF 422 deep link to API key settings', () => {
   });
 
   it('does not show the deep link for non-422 errors', async () => {
-    submitConversion.mockRejectedValue(new Error('Máy chủ gặp sự cố'));
+    const file = pdfFile();
+    submitConversionsIndividually.mockResolvedValue({
+      jobs: [],
+      failures: [{ index: 0, file, error: new Error('Máy chủ gặp sự cố') }],
+    });
 
     const user = userEvent.setup();
     render(<Harness />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    await user.upload(input, pdfFile());
+    await user.upload(input, file);
     await user.click(screen.getByRole('button', { name: /Chuyển đổi \(1\)/ }));
 
     await screen.findByRole('alert');

@@ -40,12 +40,28 @@ Describe 'cutover checklist' {
     $content = Get-Content -LiteralPath $checklist -Raw
     $content | Should -Match 'docker-compose\.prod\.yml'
     $content | Should -Match 'app\.<domain>'
+    $content | Should -Match '2 OCPU / 12 GB'
+    $content | Should -Match 'origin/main'
+    $content | Should -Not -Match '4 OCPU / 24 GB|Cloudflare Pages'
   }
 
-  It 'covers backup + admin reset exercises' {
+  It 'covers encrypted backup and account-operation exercises' {
     $content = Get-Content -LiteralPath $checklist -Raw
     $content | Should -Match 'postgres-dump\.sh'
+    $content | Should -Match '\.pgdump\.age'
     $content | Should -Match 'reset_operator_password'
+    $content | Should -Match 'manage_users'
+    $content | Should -Match 'self-service.*delet|delet.*self-service'
+  }
+
+  It 'gates public registration and soft launch operations' {
+    $content = Get-Content -LiteralPath $checklist -Raw
+    $content | Should -Match 'Turnstile'
+    $content | Should -Match 'support@<domain>'
+    $content | Should -Match 'five-second|5-second'
+    $content | Should -Match '48-hour'
+    $content | Should -Match 'test email'
+    $content | Should -Not -Match 'UptimeRobot|Grafana|Telegram'
   }
 
   It 'records known limitations honestly' {
@@ -66,20 +82,31 @@ Describe 'preflight script' {
 }
 
 Describe 'monitoring runbook' {
-  It 'carries the exact UptimeRobot and Grafana setup steps' {
+  It 'carries the provider-native GCP and OCI setup commands' {
     $content = Get-Content -LiteralPath $runbook -Raw
-    $content | Should -Match 'UptimeRobot'
-    $content | Should -Match 'Grafana Cloud'
+    $content | Should -Match 'gcloud monitoring uptime create'
+    $content | Should -Match 'oci monitoring alarm create'
+    $content | Should -Match 'publish-oci-metrics\.sh'
+    $content | Should -Not -Match 'UptimeRobot|Grafana Cloud|Telegram'
   }
 
-  It 'documents both alert rules with thresholds' {
+  It 'documents all four metric alarm thresholds' {
     $content = Get-Content -LiteralPath $runbook -Raw
-    $content | Should -Match 'conversion_jobs_failed_total'
-    $content | Should -Match 'conversion_queue_depth'
+    $content | Should -Match 'queue_depth.*80.*10'
+    $content | Should -Match 'disk_used_percent.*80.*15'
+    $content | Should -Match 'backup_age_seconds.*129600'
+    $content | Should -Match 'unhealthy_container_count.*1.*5'
   }
 
-  It 'keeps the manual-check fallback while materials pend' {
+  It 'requires an email subscription confirmation and test alert' {
+    $content = Get-Content -LiteralPath $runbook -Raw
+    $content | Should -Match 'subscription.*confirm|confirm.*subscription'
+    $content | Should -Match 'test email'
+  }
+
+  It 'keeps a manual-check fallback' {
     $content = Get-Content -LiteralPath $runbook -Raw
     $content | Should -Match '8\.4'
+    $content | Should -Match 'collect-health\.sh'
   }
 }

@@ -1,98 +1,129 @@
-# Production Cutover Checklist — Conversion Service (standalone)
+# Production Cutover Checklist — DocAI pilot
 
-Hard gate: do not switch the pilot users over until EVERY box here is
-checked and dated. Run `python eval/preflight.py --url
-http://127.0.0.1:8004` (from the repo clone on the VM — the URL is the
-compose-network port; preflight needs the clone for the typography
-sync check) first; it must report **PREFLIGHT: PASS** before proceeding.
+Hard gate: do not announce the service until every box is checked and dated.
+Run this inside the production conversion container first:
 
-Execution date: ____  Executed by: ____
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T \
+  conversion python eval/preflight.py --url http://127.0.0.1:8004
+```
 
-## 1. Stack up (VM, prod overlay — runbook §6)
+It must report **PREFLIGHT: PASS**.
 
+Execution date: ____  Executed by: ____  Exact `origin/main` SHA: ____
+
+## 1. Free-tier host and stack
+
+- [ ] OCI instance is `VM.Standard.A1.Flex`, exactly **2 OCPU / 12 GB**, in
+      the tenancy home region and labeled Always Free.
+- [ ] Operator accepts that Oracle can reclaim an idle VM; no artificial load
+      is used, and the encrypted rebuild/restore path has been rehearsed.
 - [ ] `docker compose -f docker-compose.yml -f docker-compose.prod.yml
-      config --quiet` exits 0 (env guard satisfied — CORS_ORIGIN set)
-- [ ] `docker compose -f docker-compose.yml -f docker-compose.prod.yml
-      up -d --build` — all services `healthy` (`docker compose ps`)
-- [ ] Frontend container NOT started on the VM (Cloudflare owns it —
-      `docker compose ps` shows no `frontend` row)
-- [ ] Caddy edge up: `curl -s https://api.<domain>/api/health` returns
-      backend health JSON over TLS (ACME cert issued)
-- [ ] Backend env has `CONVERSION_SERVICE_URL=http://conversion:8004`,
-      `SESSION_COOKIE_SECURE=true`, `TRUST_PROXY_HOPS=1`,
-      `CORS_ORIGIN=https://app.<domain>`
-- [ ] `LLM_CONFIG_ENCRYPTION_KEY` set (64 hex) — BYOK keys are stored
-      AES-256-GCM encrypted; the backend refuses to boot without it
-- [ ] Scanned-PDF support is BYOK: users add their own Gemini key in the
-      settings dialog; scanned uploads without a key are 422 before quota
-- [ ] Redis reachable from both services (`queueMode: true` on /health)
+      config --quiet` exits 0.
+- [ ] `ops/deploy-production.sh <main-sha>` deployed the exact current
+      `origin/main` commit and passed three consecutive health rounds.
+- [ ] All VM services are healthy; no `frontend` container runs on the VM
+      because the Cloudflare Worker owns the frontend.
+- [ ] `https://api.<domain>/health` returns healthy backend JSON over TLS.
+- [ ] Backend has `CONVERSION_SERVICE_URL=http://conversion:8004`, secure
+      cookies, one trusted proxy hop, and `CORS_ORIGIN=https://app.<domain>`.
+- [ ] Redis queue mode is active, `CONVERSION_MAX_QUEUE_DEPTH=100`, and daily
+      quota is 50.
 
-## 2. Preflight gate
+## 2. Public identity, registration, and preflight
 
-- [ ] `PREFLIGHT: PASS` output captured (paste below)
+- [ ] `PREFLIGHT: PASS` output captured below.
 
-  ```
+  ```text
   <paste preflight output here>
   ```
 
-## 3. Smoke tests (through the Cloudflare frontend — production path)
+- [ ] Public policy values read DocAI, Vietnam, and effective 2026-08-31.
+- [ ] `support@<domain>` routes through Cloudflare Email Routing to the
+      owner's verified inbox; no fake address remains.
+- [ ] Public registration is open behind a hostname-restricted Turnstile
+      widget; signup without a valid token is rejected.
+- [ ] Password reset is visibly disabled and the UI explains that operator
+      assistance is required.
 
-- [ ] `https://app.<domain>` loads (landing, no console errors)
-- [ ] Login works; login `Set-Cookie` shows `Secure; HttpOnly; SameSite=Lax`
-- [ ] Upload >4.5MB digital PDF through the UI → job `completed`, DOCX
-      downloads and opens in Word (proves Cloudflare body limit ≫ 4.5MB)
-- [ ] Upload one password-protected PDF → friendly 422, no job created,
-      no quota charged
-- [ ] Upload a non-PDF file → 400 from the backend before the service
-- [ ] Bulk upload (2+ files) → one job per file, per-file errors surfaced
-- [ ] Fidelity report opens on a finished job ("Xem kết quả kiểm tra
-      độ tin cậy"): confidence, demotions, flagged blocks, fidelityLedger
-- [ ] Quota: exceed `QUOTA_DAILY_LIMIT` for one user → 429 friendly
-      message; other users unaffected
-- [ ] Legacy TCVN3/VNI PDF converts with correct Vietnamese diacritics
-      (tier-2 lossless decode; report shows LEGACY_TEXT demotion)
+## 3. Production-path smoke tests
 
-## 4. Observability (runbook §8)
+- [ ] `https://app.<domain>` and `/api/live` load without console errors.
+- [ ] Login cookie shows `Secure; HttpOnly; SameSite=Lax`.
+- [ ] A digital PDF larger than 4.5 MB completes and its DOCX opens in Word.
+- [ ] Bulk upload: two or more selected files create independent per-file requests and
+      jobs; duplicate filenames remain distinct and partial failures surface.
+- [ ] Status uses five-second polling; conversion execution time is unaffected.
+- [ ] Password-protected PDF gives friendly 422, creates no job, and charges
+      no quota. A non-PDF gives 400 before conversion.
+- [ ] Queue depth 100 returns friendly `QUEUE_BUSY`/503 and does not charge
+      quota or leave a saved source file.
+- [ ] Exceeding `QUOTA_DAILY_LIMIT` gives one user a friendly 429 while other
+      users remain unaffected.
+- [ ] Fidelity report shows confidence, demotions, flagged blocks, and
+      `fidelityLedger`.
+- [ ] Legacy TCVN3/VNI fixture converts with correct Vietnamese diacritics and
+      reports `LEGACY_TEXT` demotion.
+- [ ] A scanned PDF without a BYOK Gemini key gives 422 before quota; a real
+      BYOK key completes one scan conversion.
 
-- [ ] `curl -s https://api.<domain>/api/health` → `alerts:[]`
-- [ ] `/metrics` reachable (Prometheus text; counters after first job)
-- [ ] Until Telegram/email wiring (materials pending): set the two alert
-      rules as runbook manual checks — `conversion_failure_rate > 0.2` and
-      `conversion_queue_depth` growing >10 min, checked daily
+## 4. Monitoring and alerts
 
-## 5. Backup + admin ops
+- [ ] `ops/monitoring/collect-health.sh` returns four numeric metrics.
+- [ ] OCI custom metrics arrive under namespace `docai` every five minutes.
+- [ ] OCI alarms exist for queue >=80/10m, disk >=80%/15m, backup age
+      >=129600s, and unhealthy containers >=1/5m.
+- [ ] GCP uptime checks cover `https://app.<domain>/api/live` and
+      `https://api.<domain>/health`.
+- [ ] The owner's OCI email subscription is confirmed and one deliberately
+      triggered test email arrived.
 
-- [ ] Nightly dump present: `ops/backup/postgres-dump.sh` ran, latest
-      `~backups/dump-*.dump` non-empty (>1 KiB guard)
-- [ ] Restore drill completed once on a scratch container (DRILL-LOG.md
-      procedure) — user + BYOK config counts match
-- [ ] Admin password reset exercised once on production (or staging VM):
-      `docker compose run --rm backend node dist/scripts/reset_operator_password.js`,
-      old JWT invalid after reset (sessionVersion bump)
+## 5. Encrypted backup and account operations
+
+- [ ] `ops/backup/postgres-dump.sh` produced a non-empty
+      `/var/backups/conversion/*.pgdump.age`; no plaintext `*.pgdump` remains.
+- [ ] GCS contains the encrypted object, has a 30-day lifecycle, is in an
+      eligible US free-tier region, and total stored bytes remain below 5 GB.
+- [ ] Restore drill completed on a scratch Postgres; user and BYOK-setting
+      counts match and the result is logged in `ops/backup/DRILL-LOG.md`.
+- [ ] `reset_operator_password.js` was exercised; the old JWT became invalid
+      because `sessionVersion` changed.
+- [ ] `manage_users.js` list/disable/enable was exercised on a test account;
+      disable revoked its session.
+- [ ] Operator deletion requires the exact canonical username, and a separate
+      test account completed self-service deletion from Settings.
 
 ## 6. Human-verified conversion
 
-- [ ] The pilot owner uploads a REAL administrative PDF (their own
-      document) through https://app.<domain> and confirms the DOCX is
-      faithful — sign-off below.
+- [ ] The owner uploaded a real administrative PDF through
+      `https://app.<domain>`, downloaded the DOCX, and judged it faithful.
 
-  Sign-off: ________  Date: ________
+Sign-off: ________  Date: ________
 
-## 7. Rollback (known, rehearsed)
+## 7. Rollback and recovery
 
-The conversion service is the only processing path; stopping it stops
-conversions but never loses data. Migrations are forward-only
-(ADR-0001); restore from nightly dump is the last resort (§3 runbook).
-`docker compose down` (NEVER `-v`) keeps all named volumes.
+- [ ] A failed health rehearsal demonstrated application-only automatic
+      rollback to the prior commit/images.
+- [ ] Operator understands that database restore, volume deletion, paid
+      scaling, and secret rotation require direct approval.
+- [ ] VM-loss drill can recreate an Always Free 2 OCPU / 12 GB host from
+      `main`, password-manager secrets, and the encrypted GCS dump.
+- [ ] `docker compose down -v` is prohibited in production.
 
-## 8. Known limitations at cutover (accepted)
+## 8. Soft-launch observation
 
-- Scanned-page quality (tier 3) is fixture-certified only; real-corpus
-  certification awaits 20–50 real scanned PDFs.
-- Legacy decode (tier 2) is fixture-certified (table-generated); mixed
-  legacy+Unicode pages fall back to tier 3.
-- Queue mode requires Redis; without it the service runs in-process
-  (dev fallback) and does not survive restarts.
-- Monitoring alerts are manual checks until Telegram/email materials
-  arrive (the single remaining manual step — exact setup commands in
-  runbook §8).
+- [ ] Registration stayed open but the URL was unannounced for a full
+      **48-hour** observation window.
+- [ ] No recurring Cloudflare Worker CPU-limit error, rising queue, stale
+      backup, high disk, unhealthy container, or missed alert was observed.
+
+## 9. Known limitations accepted
+
+- Scanned-page quality is not lossless and awaits a 20–50 document real-corpus
+  evaluation; it follows the confidence/never-guess policy.
+- Legacy decoding is fixture-certified; mixed legacy and Unicode pages can
+  fall back to OCR.
+- One Always Free VM is a single failure domain with possible reclamation and
+  no project-level availability guarantee.
+- GCP e2-micro is too small. A paid e2-medium-class fallback is not authorized
+  by this checklist.

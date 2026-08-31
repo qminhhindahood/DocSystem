@@ -8,6 +8,7 @@ startup reclaim re-queues anything left behind.
 import json
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -136,3 +137,32 @@ def test_api_store_reconnects_once_before_using_memory_fallback(monkeypatch):
     assert store.load("reconnected") == {"jobId": "reconnected"}
     assert attempts == ["connect"]
     assert store.redis_client is healthy
+
+
+def test_bounded_enqueue_atomically_accepts_below_capacity():
+    redis_client = Mock()
+    redis_client.eval.return_value = 1
+    store = JobStore(redis_client=redis_client)
+
+    accepted = store.enqueue_bounded({"jobId": "j100"}, max_depth=100)
+
+    assert accepted is True
+    redis_client.eval.assert_called_once()
+    args = redis_client.eval.call_args.args
+    assert args[1:] == (
+        1,
+        config.CONVERSION_QUEUE_KEY,
+        json.dumps({"jobId": "j100"}, ensure_ascii=False),
+        100,
+    )
+
+
+def test_bounded_enqueue_atomically_refuses_at_capacity():
+    redis_client = Mock()
+    redis_client.eval.return_value = 0
+    store = JobStore(redis_client=redis_client)
+
+    accepted = store.enqueue_bounded({"jobId": "j101"}, max_depth=100)
+
+    assert accepted is False
+    redis_client.eval.assert_called_once()

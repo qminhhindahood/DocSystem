@@ -19,6 +19,7 @@ import { useTheme } from '@/lib/theme';
 import { Button } from '@/components/ui/button';
 import { Reveal } from '@/components/landing/Reveal';
 import { HeroDocument } from '@/components/landing/HeroDocument';
+import { PolicyLinks } from '@/components/legal/PolicyLinks';
 import {
   fadeRiseDelayed,
   maskLine,
@@ -345,12 +346,8 @@ export default function LandingPage() {
         <div className="mx-auto flex max-w-[1120px] flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-metadata text-text-muted">Liên hệ</p>
-            <Link
-              href="mailto:hello@docai.vn"
-              className="text-body text-text-primary transition-colors duration-fast hover:text-action"
-            >
-              hello@docai.vn
-            </Link>
+            <Link href="/data-handling" className="text-body text-text-primary transition-colors duration-fast hover:text-action">Thông tin hỗ trợ và xử lý dữ liệu</Link>
+            <PolicyLinks className="mt-3 flex flex-wrap gap-4 text-metadata text-text-muted" />
           </div>
           <p className="text-metadata text-text-muted">
             © {new Date().getFullYear()} DocAI. Chuyển đổi PDF sang Word chuẩn Nghị định 30/2020/NĐ-CP.

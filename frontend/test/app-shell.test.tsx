@@ -31,6 +31,7 @@ vi.mock("lucide-react", () => {
     Sun: icon('sun'),
     Bell: icon('bell'),
     User: icon('user'),
+    UserRound: icon('user-round'),
     LogOut: icon('logout'),
     FileText: icon('file-text'),
     FileSearch: icon('file-search'),
@@ -205,12 +206,12 @@ describe("AppShell", () => {
     expect(screen.getByText('Background action').closest('[inert]')).not.toBeNull();
 
     // Close is the second control; the brand link is first. Shift+Tab reaches the
-    // brand link, then wraps backwards onto the last footer control.
+    // brand link, then wraps backwards onto the last policy link.
     await user.keyboard('{Shift>}{Tab}{/Shift}');
     expect(screen.getByRole('link', { name: /DocAI/ })).toHaveFocus();
 
     await user.keyboard('{Shift>}{Tab}{/Shift}');
-    expect(screen.getByRole('button', { name: 'Đăng xuất' })).toHaveFocus();
+    expect(screen.getByRole('link', { name: 'Xử lý dữ liệu' })).toHaveFocus();
 
     await user.keyboard('{Escape}');
     expect(trigger).toHaveFocus();

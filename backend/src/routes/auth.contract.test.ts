@@ -8,6 +8,8 @@ process.env.NODE_ENV = 'test';
 const mockFindUnique = jest.fn();
 const mockFindFirst = jest.fn();
 const mockCreate = jest.fn();
+const mockDelete = jest.fn();
+const mockTransaction = jest.fn();
 const mockHash = jest.fn().mockResolvedValue('hashed-password');
 const mockCompare = jest.fn();
 const mockRequestPasswordReset = jest.fn();
@@ -17,6 +19,7 @@ const mockVerifyTurnstile = jest.fn();
 jest.mock('../utils/prisma', () => ({
   prisma: {
     user: { findUnique: mockFindUnique, findFirst: mockFindFirst, create: mockCreate },
+    $transaction: mockTransaction,
   },
 }));
 jest.mock('../services/password_reset_service', () => ({
@@ -80,6 +83,10 @@ describe('user auth route contract', () => {
     mockRequestPasswordReset.mockResolvedValue({ accepted: true });
     mockResetPassword.mockResolvedValue({ success: true });
     mockVerifyTurnstile.mockResolvedValue({ ok: true });
+    mockDelete.mockResolvedValue({ id: 'u1' });
+    mockTransaction.mockImplementation(async (callback: any) => callback({
+      user: { delete: mockDelete },
+    }));
   });
 
   it('keeps public registration and returns a role-free user session', async () => {
@@ -266,5 +273,103 @@ describe('user auth route contract', () => {
     });
     expect(response.body.user).not.toHaveProperty('role');
     expect(response.body.user.llmConfig).not.toHaveProperty('encryptedApiKey');
+  });
+
+  it('deletes the authenticated account after rechecking its password', async () => {
+    mockFindUnique
+      .mockResolvedValueOnce(fullUser)
+      .mockResolvedValueOnce(fullUser);
+    const token = jwt.sign(
+      { userId: 'u1', username: 'alice', tokenUse: 'user', sessionVersion: 0 },
+      process.env.JWT_SECRET!,
+      { algorithm: 'HS256', issuer: 'ai-document-system', audience: 'ai-document-api' },
+    );
+
+    const response = await request(app)
+      .delete('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ password: 'correct-password' });
+
+    expect(response.status).toBe(204);
+    expect(response.body).toEqual({});
+    expect(mockCompare).toHaveBeenCalledWith('correct-password', 'hashed-password');
+    expect(mockDelete).toHaveBeenCalledWith({ where: { id: 'u1' } });
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(response.body)).not.toContain('correct-password');
+  });
+
+  it('refuses account deletion when the password is wrong', async () => {
+    mockFindUnique
+      .mockResolvedValueOnce(fullUser)
+      .mockResolvedValueOnce(fullUser);
+    mockCompare.mockResolvedValueOnce(false);
+    const token = jwt.sign(
+      { userId: 'u1', username: 'alice', tokenUse: 'user', sessionVersion: 0 },
+      process.env.JWT_SECRET!,
+      { algorithm: 'HS256', issuer: 'ai-document-system', audience: 'ai-document-api' },
+    );
+
+    const response = await request(app)
+      .delete('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ password: 'wrong-password' });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: 'Invalid password' });
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+
+  it('requires a valid session before account deletion', async () => {
+    const response = await request(app)
+      .delete('/api/auth/me')
+      .send({ password: 'correct-password' });
+
+    expect(response.status).toBe(401);
+    expect(mockCompare).not.toHaveBeenCalled();
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+
+  it('returns not found if the account disappears after authentication', async () => {
+    mockFindUnique
+      .mockResolvedValueOnce(fullUser)
+      .mockResolvedValueOnce(null);
+    const token = jwt.sign(
+      { userId: 'u1', username: 'alice', tokenUse: 'user', sessionVersion: 0 },
+      process.env.JWT_SECRET!,
+      { algorithm: 'HS256', issuer: 'ai-document-system', audience: 'ai-document-api' },
+    );
+
+    const response = await request(app)
+      .delete('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ password: 'correct-password' });
+
+    expect(response.status).toBe(404);
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+
+  it('returns a safe error when account deletion cannot commit', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockFindUnique
+      .mockResolvedValueOnce(fullUser)
+      .mockResolvedValueOnce(fullUser);
+    mockTransaction.mockRejectedValueOnce(new Error('database credentials leaked here'));
+    const token = jwt.sign(
+      { userId: 'u1', username: 'alice', tokenUse: 'user', sessionVersion: 0 },
+      process.env.JWT_SECRET!,
+      { algorithm: 'HS256', issuer: 'ai-document-system', audience: 'ai-document-api' },
+    );
+
+    const response = await request(app)
+      .delete('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ password: 'correct-password' });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: 'Unable to delete account' });
+    expect(JSON.stringify(response.body)).not.toContain('database credentials');
+    expect(consoleError).toHaveBeenCalledWith('Delete account error');
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain('database credentials');
+    consoleError.mockRestore();
   });
 });

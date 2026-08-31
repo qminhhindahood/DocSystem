@@ -53,6 +53,8 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       CONVERSION_WORK_DIR: /app/work
+      CONVERSION_MAX_QUEUE_DEPTH: ${CONVERSION_MAX_QUEUE_DEPTH:-100}
+      QUOTA_DAILY_LIMIT: ${QUOTA_DAILY_LIMIT:-50}
     volumes:
       - conversion_work:/app/work
     depends_on:
@@ -81,6 +83,7 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       CONVERSION_WORK_DIR: /app/work
+      CONVERSION_MAX_QUEUE_DEPTH: ${CONVERSION_MAX_QUEUE_DEPTH:-100}
     volumes:
       - conversion_work:/app/work
     depends_on:

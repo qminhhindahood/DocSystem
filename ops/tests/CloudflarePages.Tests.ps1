@@ -37,6 +37,22 @@ Describe 'OpenNext adapter config' {
     ($content | Select-String -Pattern '"vars"' -Quiet) | Should -BeFalse
   }
 
+  It 'preserves and documents every dashboard-owned production variable' {
+    $content = Get-Content -LiteralPath $wrangler -Raw
+    $content | Should -Match '"keep_vars"\s*:\s*true'
+    foreach ($name in @(
+      'BACKEND_API_URL',
+      'DISABLE_PUBLIC_REGISTER',
+      'TURNSTILE_SITE_KEY',
+      'PUBLIC_OPERATOR_NAME',
+      'PUBLIC_OPERATOR_JURISDICTION',
+      'PUBLIC_SUPPORT_EMAIL',
+      'PUBLIC_POLICY_EFFECTIVE_DATE'
+    )) {
+      $content | Should -Match $name
+    }
+  }
+
   It 'worker build script exists in package.json' {
     $content = Get-Content -LiteralPath $pkgJson -Raw
     ($content | Select-String -Pattern '"build:worker"' -Quiet) | Should -BeTrue

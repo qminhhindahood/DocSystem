@@ -9,6 +9,8 @@ import { NAV_ROUTES } from '@/lib/constants/routes';
 import { useTheme } from '@/lib/theme';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { LLMSettingsDialog } from '@/components/settings/LLMSettingsDialog';
+import { AccountSettingsDialog } from '@/components/settings/AccountSettingsDialog';
+import { PolicyLinks } from '@/components/legal/PolicyLinks';
 import { springSnappy } from '@/lib/motion';
 import {
   FileOutput,
@@ -171,6 +173,7 @@ export function Sidebar({ open, onOpenChange, triggerRef, className }: SidebarPr
           {/* Footer utilities */}
           <div className="flex-shrink-0 space-y-1 border-t border-hairline p-3">
             <LLMSettingsDialog />
+            <AccountSettingsDialog />
             {/* Visible text carries the accessible name (WCAG 2.5.3); the icon shows
                 which theme the control switches to. */}
             <button type="button" onClick={toggle} className={utilityClass}>
@@ -185,6 +188,7 @@ export function Sidebar({ open, onOpenChange, triggerRef, className }: SidebarPr
               <LogOut className="h-5 w-5 flex-shrink-0" />
               <span className="truncate">Đăng xuất</span>
             </button>
+            <PolicyLinks className="flex flex-wrap gap-x-3 gap-y-1 px-3 pt-2 text-metadata text-text-muted" />
           </div>
         </div>
       </aside>

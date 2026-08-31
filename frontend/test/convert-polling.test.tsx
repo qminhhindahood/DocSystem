@@ -52,8 +52,8 @@ describe('conversion polling scheduler', () => {
   it('uses one timer and one live region for sustained ten-job monitoring', async () => {
     // jsdom backs requestAnimationFrame with a setInterval, so mounting
     // motion components adds a ~16ms frameloop timer unrelated to polling.
-    // Assertions therefore target the 1500ms polling timer specifically.
-    const POLL_MS = 1_500;
+    // Assertions therefore target the 5000ms polling timer specifically.
+    const POLL_MS = 5_000;
     const intervalSpy = vi.spyOn(globalThis, 'setInterval');
     const clearSpy = vi.spyOn(globalThis, 'clearInterval');
     const view = render(<ConvertPage />);
@@ -63,8 +63,12 @@ describe('conversion polling scheduler', () => {
     const pollCalls = intervalSpy.mock.calls.filter(([, ms]) => ms === POLL_MS);
     expect(pollCalls).toHaveLength(1);
     expect(screen.getAllByRole('status')).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(900_000);
-    expect(getConversionStatus).toHaveBeenCalledTimes(6_000);
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(getConversionStatus).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(getConversionStatus).toHaveBeenCalledTimes(10);
+    await vi.advanceTimersByTimeAsync(895_000);
+    expect(getConversionStatus).toHaveBeenCalledTimes(1_800);
 
     view.unmount();
     const pollCallIndex = intervalSpy.mock.calls.findIndex(([, ms]) => ms === POLL_MS);

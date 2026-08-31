@@ -2,7 +2,7 @@
 #
 # The overlay targets the Oracle Always Free ARM VM (Ubuntu, docker compose).
 # These Pester checks lock its shape offline: caddy edge present, frontend
-# absent (it lives on Cloudflare Pages — ticket 07), session/trust-proxy
+# absent (it lives on a Cloudflare Worker — ticket 07), session/trust-proxy
 # hardening set, no credentials baked in, merged compose config validates.
 
 BeforeAll {
@@ -34,7 +34,7 @@ Describe 'docker-compose.prod.yml overlay' {
     ($content | Select-String -Pattern 'caddy_data:.*\s*/data' -Quiet) | Should -BeTrue
   }
 
-  It 'disables the frontend service (Cloudflare Pages owns it)' {
+  It 'disables the frontend service (the Cloudflare Worker owns it)' {
     $content = Get-Content -LiteralPath $overlay -Raw
     # The overlay must declare the frontend under a never-activated profile
     # so the VM composition never starts it.
@@ -46,6 +46,18 @@ Describe 'docker-compose.prod.yml overlay' {
     ($content | Select-String -Pattern 'SESSION_COOKIE_SECURE:\s*"true"' -Quiet) | Should -BeTrue
     ($content | Select-String -Pattern 'TRUST_PROXY_HOPS:\s*"1"' -Quiet) | Should -BeTrue
     ($content | Select-String -Pattern 'CORS_ORIGIN:\s*\$\{CORS_ORIGIN' -Quiet) | Should -BeTrue
+  }
+
+  It 'pins the public queue ceiling for both conversion processes' {
+    $base = Get-Content -LiteralPath (Join-Path $root 'docker-compose.yml') -Raw
+    ($base | Select-String -Pattern 'CONVERSION_MAX_QUEUE_DEPTH:\s*\$\{CONVERSION_MAX_QUEUE_DEPTH:-100\}' -AllMatches).Matches.Count | Should -Be 2
+    (Get-Content -LiteralPath (Join-Path $root '.env.example') -Raw) | Should -Match 'CONVERSION_MAX_QUEUE_DEPTH=100'
+  }
+
+  It 'passes the explicit daily quota into the conversion API' {
+    $base = Get-Content -LiteralPath (Join-Path $root 'docker-compose.yml') -Raw
+    $base | Should -Match 'QUOTA_DAILY_LIMIT:\s*\$\{QUOTA_DAILY_LIMIT:-50\}'
+    (Get-Content -LiteralPath (Join-Path $root '.env.example') -Raw) | Should -Match 'QUOTA_DAILY_LIMIT=50'
   }
 
   It 'contains no literal credentials (passwords/keys)' {
@@ -89,23 +101,41 @@ Describe 'merged compose config validates' {
     # The overlay REQUIRES prod env values (CORS_ORIGIN) — supply them
     # like the VM .env does, proving the guard passes when set.
     $env:CORS_ORIGIN = 'https://app.example.test'
+    $savedPostgresVolume = $env:POSTGRES_VOLUME
+    $savedRedisVolume = $env:REDIS_VOLUME
+    $savedDbPassword = $env:DB_PASSWORD
+    $env:DB_PASSWORD = 'pester-compose-only-password'
+    $env:POSTGRES_VOLUME = 'standalone_pester_postgres_data'
+    $env:REDIS_VOLUME = 'standalone_pester_redis_data'
     try {
       docker compose -f (Join-Path $root 'docker-compose.yml') -f $overlay config --quiet 2>$null
       $LASTEXITCODE | Should -Be 0
     } finally {
       Remove-Item Env:CORS_ORIGIN -ErrorAction SilentlyContinue
+      if ($null -eq $savedPostgresVolume) { Remove-Item Env:POSTGRES_VOLUME -ErrorAction SilentlyContinue } else { $env:POSTGRES_VOLUME = $savedPostgresVolume }
+      if ($null -eq $savedRedisVolume) { Remove-Item Env:REDIS_VOLUME -ErrorAction SilentlyContinue } else { $env:REDIS_VOLUME = $savedRedisVolume }
+      if ($null -eq $savedDbPassword) { Remove-Item Env:DB_PASSWORD -ErrorAction SilentlyContinue } else { $env:DB_PASSWORD = $savedDbPassword }
     }
   }
 
   It 'rejects a missing CORS_ORIGIN (guard is real)' {
     # Without the env var the overlay must refuse — the :? guard.
     $saved = $env:CORS_ORIGIN
+    $savedPostgresVolume = $env:POSTGRES_VOLUME
+    $savedRedisVolume = $env:REDIS_VOLUME
+    $savedDbPassword = $env:DB_PASSWORD
     Remove-Item Env:CORS_ORIGIN -ErrorAction SilentlyContinue
+    $env:POSTGRES_VOLUME = 'standalone_pester_postgres_data'
+    $env:REDIS_VOLUME = 'standalone_pester_redis_data'
+    $env:DB_PASSWORD = 'pester-compose-only-password'
     try {
       docker compose -f (Join-Path $root 'docker-compose.yml') -f $overlay config --quiet 2>$null
       $LASTEXITCODE | Should -Be 1
     } finally {
       if ($saved) { $env:CORS_ORIGIN = $saved }
+      if ($null -eq $savedPostgresVolume) { Remove-Item Env:POSTGRES_VOLUME -ErrorAction SilentlyContinue } else { $env:POSTGRES_VOLUME = $savedPostgresVolume }
+      if ($null -eq $savedRedisVolume) { Remove-Item Env:REDIS_VOLUME -ErrorAction SilentlyContinue } else { $env:REDIS_VOLUME = $savedRedisVolume }
+      if ($null -eq $savedDbPassword) { Remove-Item Env:DB_PASSWORD -ErrorAction SilentlyContinue } else { $env:DB_PASSWORD = $savedDbPassword }
     }
   }
 }

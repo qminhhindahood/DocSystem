@@ -11,6 +11,7 @@ vi.mock('@/lib/server/backend', () => ({
 import { POST as signup } from '@/app/api/session/signup/route';
 import { POST as forgotPassword } from '@/app/api/session/forgot-password/route';
 import { POST as resetPassword } from '@/app/api/session/reset-password/route';
+import { DELETE as deleteAccount } from '@/app/api/session/account/route';
 
 function mutationRequest(path: string, body: unknown, origin = 'https://app.example.com') {
   return new NextRequest(`https://app.example.com${path}`, {
@@ -165,6 +166,60 @@ describe('password recovery session routes', () => {
     }));
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('set-cookie')).toMatch(/docai_session=;.*Max-Age=0/i);
+  });
+});
+
+describe('account deletion session route', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function accountRequest(body: unknown, token = 'session-token') {
+    return new NextRequest('https://app.example.com/api/session/account', {
+      method: 'DELETE',
+      headers: {
+        origin: 'https://app.example.com',
+        'content-type': 'application/json',
+        ...(token ? { cookie: `docai_session=${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('requires a session before forwarding deletion', async () => {
+    const response = await deleteAccount(accountRequest({ password: 'correct-password' }, ''));
+
+    expect(response.status).toBe(401);
+    expect(mockForwardToBackend).not.toHaveBeenCalled();
+  });
+
+  it('forwards a wrong-password response without clearing the session', async () => {
+    mockForwardToBackend.mockResolvedValue(new Response(JSON.stringify({ error: 'Invalid password' }), {
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+    }));
+
+    const response = await deleteAccount(accountRequest({ password: 'wrong-password' }));
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'Invalid password' });
+    expect(response.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('clears the session only after backend deletion succeeds', async () => {
+    mockForwardToBackend.mockResolvedValue(new Response(null, { status: 204 }));
+
+    const response = await deleteAccount(accountRequest({ password: 'correct-password' }));
+
+    expect(response.status).toBe(204);
+    expect(mockForwardToBackend).toHaveBeenCalledWith('DELETE', '/api/auth/me', {
+      body: JSON.stringify({ password: 'correct-password' }),
+      headers: {
+        Authorization: 'Bearer session-token',
+        'Content-Type': 'application/json',
+      },
+    });
     expect(response.headers.get('set-cookie')).toMatch(/docai_session=;.*Max-Age=0/i);
   });
 });

@@ -1,13 +1,15 @@
 import React from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LLMSettingsDialog, OPEN_LLM_SETTINGS_EVENT } from '@/components/settings/LLMSettingsDialog';
+import { AccountSettingsDialog } from '@/components/settings/AccountSettingsDialog';
 
 const saveLLM = vi.fn();
 const getLLM = vi.fn();
 const toast = vi.fn();
-vi.mock('@/components/auth/AuthProvider', () => ({ useAuth: () => ({ refresh: vi.fn() }) }));
+const refresh = vi.fn();
+vi.mock('@/components/auth/AuthProvider', () => ({ useAuth: () => ({ refresh }) }));
 vi.mock('@/components/ui/toast', () => ({ useToast: () => ({ toast }) }));
 vi.mock('@/lib/settings-api', () => ({
   AuthError: class AuthError extends Error {},
@@ -29,6 +31,10 @@ beforeEach(() => {
     },
   });
   saveLLM.mockResolvedValue({ success: true, config: { hasApiKey: true } });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('BYOK vision settings dialog', () => {
@@ -141,5 +147,52 @@ describe('BYOK vision settings dialog', () => {
       model: 'gemini-2.5-flash',
       apiKey: 'gemini-key',
     }));
+  });
+});
+
+describe('account deletion dialog', () => {
+  it('requires the password and exact destructive confirmation', async () => {
+    const user = userEvent.setup();
+    render(<AccountSettingsDialog />);
+    await user.click(screen.getByRole('button', { name: 'Quản lý tài khoản' }));
+
+    const deleteButton = screen.getByRole('button', { name: 'Xóa tài khoản vĩnh viễn' });
+    expect(deleteButton).toBeDisabled();
+    await user.type(screen.getByLabelText('Mật khẩu hiện tại'), 'correct-password');
+    await user.type(screen.getByLabelText('Nhập “XÓA TÀI KHOẢN” để xác nhận'), 'xóa tài khoản');
+    expect(deleteButton).toBeDisabled();
+    await user.clear(screen.getByLabelText('Nhập “XÓA TÀI KHOẢN” để xác nhận'));
+    await user.type(screen.getByLabelText('Nhập “XÓA TÀI KHOẢN” để xác nhận'), 'XÓA TÀI KHOẢN');
+    expect(deleteButton).toBeEnabled();
+  });
+
+  it('keeps the dialog open and reports a wrong password', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: 'Invalid password',
+    }), { status: 401, headers: { 'content-type': 'application/json' } })));
+    const user = userEvent.setup();
+    render(<AccountSettingsDialog />);
+    await user.click(screen.getByRole('button', { name: 'Quản lý tài khoản' }));
+    await user.type(screen.getByLabelText('Mật khẩu hiện tại'), 'wrong-password');
+    await user.type(screen.getByLabelText('Nhập “XÓA TÀI KHOẢN” để xác nhận'), 'XÓA TÀI KHOẢN');
+    await user.click(screen.getByRole('button', { name: 'Xóa tài khoản vĩnh viễn' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Mật khẩu không đúng.');
+    expect(screen.getByRole('dialog', { name: 'Xóa tài khoản' })).toBeInTheDocument();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('refreshes authentication and closes after successful deletion', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+    refresh.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<AccountSettingsDialog />);
+    await user.click(screen.getByRole('button', { name: 'Quản lý tài khoản' }));
+    await user.type(screen.getByLabelText('Mật khẩu hiện tại'), 'correct-password');
+    await user.type(screen.getByLabelText('Nhập “XÓA TÀI KHOẢN” để xác nhận'), 'XÓA TÀI KHOẢN');
+    await user.click(screen.getByRole('button', { name: 'Xóa tài khoản vĩnh viễn' }));
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('dialog', { name: 'Xóa tài khoản' })).toBeNull();
   });
 });

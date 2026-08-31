@@ -1,4 +1,4 @@
-# ADR-0002: Hybrid free-tier production deployment (Oracle VM + Cloudflare)
+# ADR-0002: Hybrid free-first production deployment (Oracle VM + Cloudflare)
 
 ## Status
 
@@ -19,10 +19,14 @@ were evaluated against free tiers (grill session 2026-08-29):
   worker (~2.6M vCPU-sec/month at 24/7); a serverless refactor of the worker
   adds the largest workstream on the board while preserving the same
   always-on requirement elsewhere.
-- No free managed Postgres or Redis exists on GCP; Oracle Always Free
-  provides 4 Ampere A1 OCPUs, 24GB RAM, 200GB disk — enough to run the
-  entire existing stack unchanged on ARM64 (all base images are multi-arch;
-  PyMuPDF ships ARM64 wheels).
+- No free managed Postgres or Redis exists on GCP. An Oracle free-only
+  tenancy provides the equivalent of 2 Ampere A1 OCPUs and 12GB RAM, plus
+  200GB of combined boot/block storage. The stack runs unchanged on ARM64
+  (all base images are multi-arch; PyMuPDF ships ARM64 wheels).
+- GCP's free Compute Engine shape is one `e2-micro`, with approximately 1GB
+  RAM. It is not safe for the combined Postgres, Redis, Node, Python API, and
+  conversion-worker workload. A paid `e2-medium`-class VM is the lowest-change
+  fallback, but it requires a separate cost review and explicit approval.
 - The user already owns a domain hosted on Cloudflare.
 
 The frontend never talks to the backend directly from the browser — all
@@ -34,14 +38,18 @@ from the backend provided that platform forwards large bodies.
 
 Deploy hybrid on free tiers:
 
-- **Oracle Always Free ARM VM**: the entire compose stack (postgres, redis,
+- **Oracle Always Free ARM VM**: one A1.Flex VM at exactly 2 OCPU / 12GB runs
+  the entire compose stack (postgres, redis,
   conversion, conversion-worker, backend) behind **Caddy** providing automatic
   TLS on `api.<domain>`. Deploys are build-on-VM: `git pull` +
   `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`
   (ARM-native builds; no multi-arch registry, no CI/CD pipeline).
-- **Cloudflare Pages** hosts the frontend via the `@opennextjs/cloudflare`
-  adapter (~100MB body limit preserves the 50MB upload cap); the proxy route
-  targets `https://api.<domain>`.
+- **Cloudflare Workers Free** hosts the frontend via the
+  `@opennextjs/cloudflare` adapter (~100MB body limit preserves the 50MB
+  per-file upload cap); the proxy route targets `https://api.<domain>`.
+  A multi-file selection is submitted as independent requests so the combined
+  batch never becomes one oversized Worker request. Upgrading to Workers Paid
+  requires explicit operator approval.
 - **Nightly Postgres backups** (`pg_dump`) to VM disk, synced to GCS free
   tier (30-day retention), with a monthly restore drill documented in the
   runbook. Uploads/work volumes are deliberately not backed up (in-flight
@@ -52,16 +60,25 @@ Deploy hybrid on free tiers:
 
 ## Consequences
 
-- Zero recurring cost; the whole pilot runs on Oracle's always-free quota
-  with headroom (the full stack idles far below 24GB/4 OCPU).
+- Nominal zero recurring infrastructure cost while usage stays inside the
+  Oracle A1, Cloudflare, and GCS allowances. No paid resource is created by
+  automation. GCS usage above its regional 5GB-month allowance can still
+  create a small charge on the active GCP billing account and must be watched.
+- Oracle can report `out of host capacity` for A1 and may reclaim an idle
+  Always Free VM. Capacity is a hard provisioning gate, the VM is treated as
+  replaceable, and encrypted off-provider backups are mandatory. The project
+  does not generate artificial load to evade reclamation.
 - The architecture stays compose-native: the repo's own cutover checklist
   and preflight apply nearly verbatim on the VM.
 - File uploads are capped by Cloudflare's ~100MB body limit, comfortably
   above the product's 50MB cap — no code change to the upload path.
 - A single VM is a single failure domain and a hard ceiling (~200GB disk,
-  4 OCPU). Acceptable for 3–10 users; scale-out (or the serverless refactor
+  2 OCPU / 12GB). Acceptable for a soft launch to 3–10 users; scale-out (or the serverless refactor
   of the worker + object storage) becomes the next ADR if the pilot grows.
 - Secrets live in VM env vars; `LLM_CONFIG_ENCRYPTION_KEY` additionally has
   one offline escrowed copy — Neon/GCS backups do not protect it.
-- Monitoring hookup (UptimeRobot + Grafana Cloud free → Telegram/email) is
-  wiring-only once the pilot owner provides alert materials.
+- Monitoring uses OCI Always Free custom metrics/alarms plus GCP public uptime
+  checks, with email as the launch alert channel.
+
+The provider comparison and source links are recorded in
+`docs/research/2026-08-31-free-tier-deployment-options.md`.

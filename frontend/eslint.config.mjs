@@ -54,5 +54,12 @@ export default defineConfig([
       'react-hooks/set-state-in-effect': 'off',
     },
   },
-  globalIgnores(['.next/**', 'coverage/**', 'dist/**', 'next-env.d.ts']),
+  globalIgnores([
+    '.next/**',
+    '.open-next/**',
+    '.wrangler/**',
+    'coverage/**',
+    'dist/**',
+    'next-env.d.ts',
+  ]),
 ]);
