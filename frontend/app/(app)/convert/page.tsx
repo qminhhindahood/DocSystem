@@ -34,7 +34,7 @@ type SourcePreview = {
   url: string;
 };
 
-const POLL_INTERVAL_MS = 1500;
+const POLL_INTERVAL_MS = 5_000;
 
 const STATUS_LABELS: Record<string, string> = {
   queued: "Trong hàng đợi",

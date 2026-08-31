@@ -47,13 +47,34 @@ function Invoke-Step([string]$Name, [scriptblock]$Run) {
 }
 
 Invoke-Step 'Compose config and standalone compose contract' {
-  if (-not $env:DB_PASSWORD) { $env:DB_PASSWORD = 'verification-only-password' }
+  $overrides = @{
+    DB_PASSWORD = 'verification-only-password'
+    POSTGRES_VOLUME = 'standalone_verification_postgres_data'
+    REDIS_VOLUME = 'standalone_verification_redis_data'
+  }
+  $saved = @{}
+  foreach ($name in $overrides.Keys) {
+    $saved[$name] = [pscustomobject]@{
+      Exists = Test-Path -LiteralPath "Env:$name"
+      Value = [Environment]::GetEnvironmentVariable($name, 'Process')
+    }
+    [Environment]::SetEnvironmentVariable($name, $overrides[$name], 'Process')
+  }
   Push-Location $root
   try {
     Invoke-NativeChecked docker @('compose','config','--quiet')
     & (Join-Path $PSScriptRoot 'test-compose.ps1')
     if (-not $?) { throw 'Standalone compose contract failed' }
-  } finally { Pop-Location }
+  } finally {
+    Pop-Location
+    foreach ($name in $overrides.Keys) {
+      if ($saved[$name].Exists) {
+        [Environment]::SetEnvironmentVariable($name, $saved[$name].Value, 'Process')
+      } else {
+        [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+      }
+    }
+  }
 }
 
 Invoke-Step 'Operations unit tests' {

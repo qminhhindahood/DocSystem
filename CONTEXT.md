@@ -12,7 +12,7 @@ Glossary of domain terms. Implementation-free: no file paths, no config keys, no
 
 **Degraded Page** — a scanned page that could not be converted (vision not configured). Degraded pages are reported, never silently dropped; enough of them fail the whole job.
 
-**Quota** — per-user daily cap on conversions (default 20). Charged only after the PDF passes validation, so garbage uploads are free. A conversion that later fails should not consume quota (refund).
+**Quota** — per-user daily cap on conversions (default 50). Charged only after the PDF passes validation, so garbage uploads are free. A conversion that later fails should not consume quota (refund).
 
 **Typography Contract** — the single canonical source of Decree 30/2020 styling values (sizes, margins, zones, roles). Humans curate it; the rule engine applies it; no LLM ever decides a value in it.
 

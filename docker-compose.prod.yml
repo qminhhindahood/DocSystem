@@ -7,7 +7,7 @@
 #   + backend hardened for TLS termination at Caddy:
 #       SESSION_COOKIE_SECURE=true, TRUST_PROXY_HOPS=1,
 #       CORS_ORIGIN=https://app.<domain> (from VM .env)
-#   - frontend service disabled: it lives on Cloudflare Pages (ticket 07).
+#   - frontend service disabled: it lives on a Cloudflare Worker (ticket 07).
 #     Mechanism: profiles: ["cloudflare-only"] — a profile that is never
 #     activated on the VM, so compose never starts the frontend there.
 #     (Dev keeps running it via plain docker-compose.yml.)
@@ -35,7 +35,7 @@ services:
       retries: 3
 
   frontend:
-    # Disabled on the VM: Cloudflare Pages serves the frontend (ticket 07).
+    # Disabled on the VM: a Cloudflare Worker serves the frontend (ticket 07).
     # Dev composes (docker-compose.yml alone) still run it.
     profiles: ["cloudflare-only"]
 
@@ -46,7 +46,7 @@ services:
       SESSION_COOKIE_SECURE: "true"
       TRUST_PROXY_HOPS: "1"
       NODE_ENV: production
-      # Cloudflare Pages origin (ticket 07) — from VM .env, never baked in.
+      # Cloudflare Worker origin (ticket 07) — from VM .env, never baked in.
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required in the VM .env}
     logging: &prod-logging
       driver: json-file

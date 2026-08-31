@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { RequireSession } from '@/components/auth/RequireSession';
 import { AuthRise } from '@/components/auth/AuthRise';
 import { ArrowLeft, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { PolicyLinks } from '@/components/legal/PolicyLinks';
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -53,6 +54,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           <p className="text-metadata text-text-muted">
             © {new Date().getFullYear()} DocAI. Chuyển đổi PDF sang DOCX theo Nghị định 30.
           </p>
+          <PolicyLinks className="flex flex-wrap gap-4 text-metadata text-text-muted" />
         </div>
 
         {/* One compact 16px-radius panel holds the form. */}

@@ -24,10 +24,11 @@ logger = logging.getLogger(__name__)
 class AdmissionError(Exception):
     """A safe request-level rejection after an upload reaches admission."""
 
-    def __init__(self, status_code: int, detail: str):
+    def __init__(self, status_code: int, detail: str, *, code: str | None = None):
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+        self.code = code
 
 
 @dataclass(frozen=True)

@@ -82,21 +82,26 @@ QUOTA_REFUND_RETRY_DELAY_S = max(
     0.1, float(os.environ.get("CONVERSION_QUOTA_REFUND_RETRY_DELAY_S", "1"))
 )
 
+
+def _positive_int_env(name: str, default: int) -> int:
+    raw = os.environ.get(name, str(default))
+    try:
+        value = int(raw)
+    except ValueError:
+        raise RuntimeError(f"{name} must be an integer, got {raw!r}") from None
+    if value <= 0:
+        raise RuntimeError(f"{name} must be > 0, got {value}")
+    return value
+
+
+MAX_QUEUE_DEPTH = _positive_int_env("CONVERSION_MAX_QUEUE_DEPTH", 100)
+
 # ─── Quota (P3, plan §8; ticket 01) ────────────────────────────────────────────
 # Daily docs/user. Pilot policy is 50 (grill Q6/Q11). Invalid or non-positive
 # values fail fast at import — a typo must never silently shrink or zero the
 # quota guard that caps a user's BYOK Gemini spend and system load.
 def _daily_quota_limit() -> int:
-    raw = os.environ.get("QUOTA_DAILY_LIMIT", "50")
-    try:
-        value = int(raw)
-    except ValueError:
-        raise RuntimeError(
-            f"QUOTA_DAILY_LIMIT must be an integer, got {raw!r}"
-        ) from None
-    if value <= 0:
-        raise RuntimeError(f"QUOTA_DAILY_LIMIT must be > 0, got {value}")
-    return value
+    return _positive_int_env("QUOTA_DAILY_LIMIT", 50)
 
 
 DAILY_QUOTA_LIMIT = _daily_quota_limit()

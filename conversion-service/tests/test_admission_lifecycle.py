@@ -179,6 +179,59 @@ def test_single_dispatch_failure_deletes_source_and_refunds_charge(
     assert _quota_count(quota, "dispatch-user") == 0
 
 
+def test_full_queue_rejects_with_safe_busy_response_and_rolls_back(
+    monkeypatch, tmp_path
+):
+    source = _saved_pdf(tmp_path, "queue-full.pdf")
+    quota = QuotaService(redis_client=None, limit=3)
+    monkeypatch.setattr(main, "QUOTA", quota)
+    monkeypatch.setattr(main, "validate_and_save", lambda *_args: str(source))
+    monkeypatch.setattr(main, "check_password", lambda _path: None)
+    monkeypatch.setattr(main, "_has_scanned_pages", lambda _path: False)
+    monkeypatch.setattr(main.config, "ensure_dirs", lambda: None)
+
+    class FullStore:
+        using_redis = True
+        saved_job_id = None
+        deleted_job_id = None
+
+        @classmethod
+        def save(cls, job_id, _state):
+            cls.saved_job_id = job_id
+
+        @staticmethod
+        def enqueue_bounded(_payload, max_depth):
+            assert max_depth == 100
+            return False
+
+        @classmethod
+        def delete(cls, job_id):
+            cls.deleted_job_id = job_id
+
+        @staticmethod
+        def load(_job_id):
+            return None
+
+    monkeypatch.setattr(main, "STORE", FullStore())
+
+    with TestClient(main.app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/convert",
+            headers={"X-User-Id": "queue-user"},
+            files={"file": ("queue-full.pdf", b"%PDF-", "application/pdf")},
+        )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "code": "QUEUE_BUSY",
+        "detail": "Hệ thống đang bận. Vui lòng thử lại sau.",
+    }
+    assert FullStore.saved_job_id is not None
+    assert FullStore.deleted_job_id == FullStore.saved_job_id
+    assert not source.exists()
+    assert _quota_count(quota, "queue-user") == 0
+
+
 def test_bulk_dispatch_failure_is_isolated_and_refunded(monkeypatch, tmp_path):
     source = _saved_pdf(tmp_path, "bulk-dispatch.pdf")
     quota = QuotaService(redis_client=None, limit=3)

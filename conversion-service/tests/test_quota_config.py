@@ -28,6 +28,16 @@ def _reload_with_env(monkeypatch, value: str | None):
     return importlib.reload(quota)
 
 
+def _reload_queue_depth(monkeypatch, value: str | None):
+    if value is None:
+        monkeypatch.delenv("CONVERSION_MAX_QUEUE_DEPTH", raising=False)
+    else:
+        monkeypatch.setenv("CONVERSION_MAX_QUEUE_DEPTH", value)
+    import config
+
+    return importlib.reload(config)
+
+
 class TestDefaultLimit:
     def test_env_absent_defaults_to_50(self, monkeypatch):
         mod = _reload_with_env(monkeypatch, None)
@@ -76,3 +86,18 @@ class TestInvalidValuesFailFast:
         charge, remaining = service.charge("user-x")
         assert charge is None
         assert remaining == 0
+
+
+class TestQueueDepthConfig:
+    def test_env_absent_defaults_to_one_hundred(self, monkeypatch):
+        config_module = _reload_queue_depth(monkeypatch, None)
+        assert config_module.MAX_QUEUE_DEPTH == 100
+
+    def test_positive_integer_is_honored(self, monkeypatch):
+        config_module = _reload_queue_depth(monkeypatch, "7")
+        assert config_module.MAX_QUEUE_DEPTH == 7
+
+    @pytest.mark.parametrize("bogus", ["bogus", "", "-5", "0", "4.5"])
+    def test_invalid_queue_depth_fails_fast(self, monkeypatch, bogus):
+        with pytest.raises(RuntimeError, match="CONVERSION_MAX_QUEUE_DEPTH"):
+            _reload_queue_depth(monkeypatch, bogus)

@@ -46,6 +46,49 @@ export async function submitConversion(file: File): Promise<{ jobId: string }> {
   return handle<{ success: boolean; jobId: string }>(res);
 }
 
+export interface IndividualSubmissionJob {
+  index: number;
+  file: File;
+  jobId: string;
+}
+
+export interface IndividualSubmissionFailure {
+  index: number;
+  file: File;
+  error: Error;
+}
+
+export interface IndividualSubmissionResult {
+  jobs: IndividualSubmissionJob[];
+  failures: IndividualSubmissionFailure[];
+}
+
+/**
+ * Submit selected PDFs one at a time through the established single-file
+ * proxy. A rejected file does not hide later successes; an expired session
+ * aborts immediately so the caller can refresh authentication.
+ */
+export async function submitConversionsIndividually(
+  files: File[],
+): Promise<IndividualSubmissionResult> {
+  const jobs: IndividualSubmissionJob[] = [];
+  const failures: IndividualSubmissionFailure[] = [];
+  for (const [index, file] of files.entries()) {
+    try {
+      const { jobId } = await submitConversion(file);
+      jobs.push({ index, file, jobId });
+    } catch (error) {
+      if (error instanceof AuthError) throw error;
+      failures.push({
+        index,
+        file,
+        error: error instanceof Error ? error : new Error('Chuyển đổi thất bại'),
+      });
+    }
+  }
+  return { jobs, failures };
+}
+
 /** Poll a conversion job's status. */
 export async function getConversionStatus(jobId: string): Promise<ConversionStatus> {
   const res = await fetch(`${API_BASE}/convert/${encodeURIComponent(jobId)}`);

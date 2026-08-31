@@ -35,7 +35,7 @@ function deferred<T>() {
 
 async function finishFirstPoll() {
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(1_500);
+    await vi.advanceTimersByTimeAsync(5_000);
   });
 }
 
@@ -126,7 +126,7 @@ describe('conversion source preview and state lifecycle', () => {
     await finishFirstPoll();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1_500);
+      await vi.advanceTimersByTimeAsync(5_000);
     });
     fireEvent.click(screen.getByRole('button', { name: 'Xem kết quả kiểm tra độ tin cậy' }));
     expect(screen.getByTestId('convert-report-job-0')).toBeVisible();

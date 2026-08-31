@@ -71,7 +71,7 @@ describe('conversion delivery report', () => {
   it('shows coverage and every warning without hiding the download', async () => {
     render(<ConvertPage />);
     fireEvent.click(screen.getByRole('button', { name: 'Inject warning job' }));
-    await act(async () => vi.advanceTimersByTimeAsync(1_500));
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
 
     expect(screen.getByRole('status')).toHaveTextContent('Hoàn thành (có cảnh báo)');
     const reportButton = screen.getByRole('button', { name: 'Xem kết quả kiểm tra độ tin cậy' });

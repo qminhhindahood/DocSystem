@@ -56,7 +56,12 @@ from refund_journal import (
     save_pending_refund,
 )
 from triage.triage import SCANNED, triage_page
-from user_errors import UNEXPECTED_CONVERSION_ERROR, VISION_AUTH_FAILED_DETAIL
+from user_errors import (
+    QUEUE_BUSY_CODE,
+    QUEUE_BUSY_DETAIL,
+    UNEXPECTED_CONVERSION_ERROR,
+    VISION_AUTH_FAILED_DETAIL,
+)
 from vision.gemini_contract import VisionAuthError
 
 logging.basicConfig(level=logging.INFO)
@@ -330,8 +335,19 @@ def _dispatch_job(job: AdmittedJob) -> str:
         if STORE.using_redis:
             STORE.save(job.job_id, state)
             try:
-                STORE.enqueue(job.payload())
+                accepted = STORE.enqueue_bounded(
+                    job.payload(),
+                    max_depth=config.MAX_QUEUE_DEPTH,
+                )
+                if not accepted:
+                    raise AdmissionError(
+                        503,
+                        QUEUE_BUSY_DETAIL,
+                        code=QUEUE_BUSY_CODE,
+                    )
                 return "queue"
+            except AdmissionError:
+                raise
             except RuntimeError:
                 pass
 
@@ -344,7 +360,10 @@ def _dispatch_job(job: AdmittedJob) -> str:
             raise
         return "in-process"
     except Exception as error:
-        logger.exception("conversion job %s could not be dispatched", job.job_id)
+        if isinstance(error, AdmissionError):
+            logger.info("conversion job %s rejected before dispatch: %s", job.job_id, error.code)
+        else:
+            logger.exception("conversion job %s could not be dispatched", job.job_id)
         try:
             STORE.delete(job.job_id)
         except Exception as cleanup_error:  # noqa: BLE001
@@ -358,6 +377,8 @@ def _dispatch_job(job: AdmittedJob) -> str:
         if not _attempt_job_refund(refund) and refund is not None:
             _schedule_job_refund_retry(refund)
         delete_source(job.pdf_path)
+        if isinstance(error, AdmissionError):
+            raise
         raise AdmissionError(500, UNEXPECTED_CONVERSION_ERROR) from error
 
 
@@ -425,6 +446,11 @@ async def convert(
         job = await asyncio.to_thread(_admit_upload, file, x_user_id, vision_config)
         mode = _dispatch_job(job)
     except (IntakeError, AdmissionError) as error:
+        if isinstance(error, AdmissionError) and error.code:
+            return JSONResponse(
+                status_code=error.status_code,
+                content={"code": error.code, "detail": error.detail},
+            )
         raise HTTPException(status_code=error.status_code, detail=error.detail)
     return {"jobId": job.job_id, "mode": mode}
 

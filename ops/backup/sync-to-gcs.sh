@@ -12,6 +12,15 @@ set -euo pipefail
 
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/conversion}"
 GCS_PREFIX="${GCS_PREFIX:-postgres}"
+GCLOUD_BIN="${GCLOUD_BIN:-gcloud}"
 
-gcloud storage rsync --recursive "$BACKUP_DIR" "$GCS_BACKUP_BUCKET/$GCS_PREFIX/"
-echo "sync-to-gcs: $BACKUP_DIR -> $GCS_BACKUP_BUCKET/$GCS_PREFIX/"
+stage_dir="$(mktemp -d)"
+trap 'rm -rf "$stage_dir"' EXIT HUP INT TERM
+find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.pgdump.age' -exec cp -p '{}' "$stage_dir/" \;
+if ! find "$stage_dir" -maxdepth 1 -type f -name '*.pgdump.age' -print -quit | grep -q .; then
+  echo "sync-to-gcs: no encrypted backups found in $BACKUP_DIR" >&2
+  exit 1
+fi
+
+"$GCLOUD_BIN" storage rsync --recursive "$stage_dir" "$GCS_BACKUP_BUCKET/$GCS_PREFIX/"
+echo "sync-to-gcs: encrypted backups -> $GCS_BACKUP_BUCKET/$GCS_PREFIX/"

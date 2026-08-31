@@ -2,15 +2,16 @@ import { NextResponse } from 'next/server';
 import { forwardToBackend } from '@/lib/server/backend';
 import { passwordResetEnabled } from '@/lib/server/password-reset-mode';
 import { isPublicRegistrationEnabled } from '@/lib/server/public-registration-mode';
+import { readPublicSiteConfig } from '@/lib/server/public-site-config';
 
 export async function GET(): Promise<NextResponse> {
   try {
     passwordResetEnabled();
-    if (
-      isPublicRegistrationEnabled()
-      && !process.env.TURNSTILE_SITE_KEY?.trim()
-    ) {
-      return NextResponse.json({ status: 'not_ready' }, { status: 503 });
+    if (isPublicRegistrationEnabled()) {
+      if (!process.env.TURNSTILE_SITE_KEY?.trim()) {
+        return NextResponse.json({ status: 'not_ready' }, { status: 503 });
+      }
+      readPublicSiteConfig();
     }
     const response = await forwardToBackend('GET', '/ready');
     if (response.ok) return NextResponse.json({ status: 'ready' });

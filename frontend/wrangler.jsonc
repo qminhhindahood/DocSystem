@@ -16,7 +16,18 @@
 			"binding": "WORKER_SELF_REFERENCE",
 			"service": "ai-docs-frontend"
 		}
-	]
-	// BACKEND_API_URL is a runtime variable set in the Cloudflare dashboard
-	// (Production + Preview): https://api.<domain> — never baked here.
+	],
+	// Keep dashboard-owned values when Git deployment publishes a new Worker.
+	// Required Production values (and Preview equivalents where applicable):
+	// BACKEND_API_URL=https://api.<domain>
+	// DISABLE_PUBLIC_REGISTER=false
+	// TURNSTILE_SITE_KEY=<Cloudflare Turnstile site key>
+	// PUBLIC_OPERATOR_NAME=DocAI
+	// PUBLIC_OPERATOR_JURISDICTION=Vietnam
+	// PUBLIC_SUPPORT_EMAIL=support@<domain>
+	// PUBLIC_POLICY_EFFECTIVE_DATE=<actual deployment YYYY-MM-DD>
+	// PASSWORD_RESET_MODE=disabled
+	// SESSION_COOKIE_SECURE=true
+	// FRONTEND_TRUST_PROXY_HOPS=<verified Cloudflare hop count>
+	"keep_vars": true
 }
